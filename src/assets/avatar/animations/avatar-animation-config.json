@@ -1,0 +1,171 @@
+{
+  "version": "1.0.0",
+  "description": "虚拟形象动效配置 - 疗愈Agent",
+  "avatarId": "healing-tiger",
+  "avatarName": "小疗虎",
+  "baseSize": {
+    "width": 172,
+    "height": 380
+  },
+  "animations": {
+    "idle": {
+      "id": "idle",
+      "label": "待机",
+      "description": "待机呼吸浮动",
+      "lottieFile": null,
+      "cssClass": "state-idle",
+      "duration": 3000,
+      "easing": "ease-in-out",
+      "loop": true,
+      "params": {
+        "translateY": { "from": 0, "to": -6, "unit": "px" },
+        "scale": { "from": 1, "to": 1.008 },
+        "glowColor": "rgba(123, 158, 200, 0.15)",
+        "glowScale": "1.0"
+      }
+    },
+    "listening": {
+      "id": "listening",
+      "label": "倾听",
+      "description": "倾听点头/侧耳",
+      "lottieFile": null,
+      "cssClass": "state-listening",
+      "duration": 2000,
+      "easing": "ease-in-out",
+      "loop": true,
+      "params": {
+        "rotate": { "from": 0, "to": 2.5, "unit": "deg" },
+        "translateY": { "from": 0, "to": 1, "unit": "px" },
+        "glowColor": "rgba(123, 158, 200, 0.23)",
+        "glowScale": "1.02"
+      }
+    },
+    "speaking": {
+      "id": "speaking",
+      "label": "说话",
+      "description": "说话嘴部微动+肢体",
+      "lottieFile": null,
+      "cssClass": "state-speaking",
+      "duration": 350,
+      "easing": "ease-in-out",
+      "loop": true,
+      "params": {
+        "translateY": { "from": 0, "to": -2, "unit": "px" },
+        "scale": { "from": 1, "to": 1.005 },
+        "mouthOpenHeight": 16,
+        "mouthOpenWidth": 20,
+        "glowColor": "rgba(107, 168, 165, 0.20)"
+      }
+    },
+    "healing": {
+      "id": "healing",
+      "label": "疗愈",
+      "description": "疗愈中柔和光效",
+      "lottieFile": null,
+      "cssClass": "state-healing",
+      "duration": 4000,
+      "easing": "ease-in-out",
+      "loop": true,
+      "params": {
+        "translateY": { "from": 0, "to": -8, "unit": "px" },
+        "scale": { "from": 1, "to": 1.01 },
+        "brightness": { "from": 1, "to": 1.05 },
+        "particleCount": 6,
+        "particleFloatRange": { "from": 0, "to": -48, "unit": "px" },
+        "glowColor": "rgba(167, 147, 193, 0.28)",
+        "glowScale": { "from": 0.95, "to": 1.06 }
+      }
+    },
+    "laughing": {
+      "id": "laughing",
+      "label": "大笑",
+      "description": "开心大笑表情",
+      "lottieFile": "./laughing.json",
+      "cssClass": null,
+      "duration": 2333,
+      "easing": "linear",
+      "loop": true,
+      "params": {
+        "lottieWidth": 1303,
+        "lottieHeight": 1300,
+        "frameRate": 30,
+        "totalFrames": 70
+      }
+    },
+    "angry": {
+      "id": "angry",
+      "label": "发怒",
+      "description": "愤怒表情",
+      "lottieFile": "./angry.json",
+      "cssClass": null,
+      "duration": 2333,
+      "easing": "linear",
+      "loop": true,
+      "params": {
+        "lottieWidth": 1303,
+        "lottieHeight": 1300,
+        "frameRate": 30,
+        "totalFrames": 70
+      }
+    },
+    "cool": {
+      "id": "cool",
+      "label": "酷盖",
+      "description": "酷酷的表情",
+      "lottieFile": "./cool.json",
+      "cssClass": null,
+      "duration": 2333,
+      "easing": "linear",
+      "loop": true,
+      "params": {
+        "lottieWidth": 1303,
+        "lottieHeight": 1300,
+        "frameRate": 30,
+        "totalFrames": 70
+      }
+    },
+    "like": {
+      "id": "like",
+      "label": "喜欢",
+      "description": "喜欢/喜爱表情",
+      "lottieFile": "./like.json",
+      "cssClass": null,
+      "duration": 2333,
+      "easing": "linear",
+      "loop": true,
+      "params": {
+        "lottieWidth": 1303,
+        "lottieHeight": 1300,
+        "frameRate": 30,
+        "totalFrames": 70
+      }
+    },
+    "surprised": {
+      "id": "surprised",
+      "label": "震惊",
+      "description": "震惊/惊讶表情",
+      "lottieFile": "./surprised.json",
+      "cssClass": null,
+      "duration": 2333,
+      "easing": "linear",
+      "loop": true,
+      "params": {
+        "lottieWidth": 1303,
+        "lottieHeight": 1300,
+        "frameRate": 30,
+        "totalFrames": 70
+      }
+    }
+  },
+  "animationOrder": [
+    "idle",
+    "listening",
+    "speaking",
+    "healing",
+    "laughing",
+    "angry",
+    "cool",
+    "like",
+    "surprised"
+  ]
+}

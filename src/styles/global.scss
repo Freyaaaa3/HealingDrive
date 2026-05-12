@@ -1,0 +1,111 @@
+/* ==================== 全局样式重置 & 基础 ==================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  /* 苹果系字体栈 */
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 
+               'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: #b6c5ee;
+  color: #44445a;
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+}
+
+/* ==================== 工具类 ==================== */
+
+.text-center { text-align: center; }
+.text-muted { color: #8E8E93; }
+
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ==================== 座舱适配 ==================== */
+
+/* 异形屏安全区域（刘海/挖孔屏）*/
+body {
+  @supports (padding: env(safe-area-inset-top)) {
+    padding-top: env(safe-area-inset-top, 0);
+    padding-left: env(safe-area-inset-left, 0);
+    padding-right: env(safe-area-inset-right, 0);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+}
+
+/* 夜间模式自适应（座舱暗光环境优先）*/
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #7e88a7;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  body {
+    background: #f0eff4;
+  }
+}
+
+/* ==================== 滚动条（座舱极简）==================== */
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #7B9EC833;
+  border-radius: 2px;
+
+  &:hover {
+    background: #8ab1e259;
+  }
+}
+
+/* ==================== 选择与聚焦（禁止视觉反馈）==================== */
+
+// 疗愈Agent全程无触控，禁用选中高亮
+#healing-drive-app {
+  * {
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+  }
+}
+
+/* ==================== 性能优化（座舱低功耗）==================== */
+
+// 减少动画（对晕车敏感的司机友好）
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

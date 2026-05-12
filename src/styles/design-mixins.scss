@@ -1,0 +1,141 @@
+/**
+ * 设计系统 SCSS 变量 & 混入
+ * 
+ * 融合：苹果原生UI + 蔚来汽车助手面板视觉规范
+ * 所有组件统一引用此文件确保一致性
+ */
+
+// ==================== 色彩体系 ====================
+
+// 主色：柔和雾霾蓝（莫兰迪低饱和）
+$color-primary: #7B9EC8;
+$color-primary-light: #B4CDE5;
+$color-primary-glow: #7B9EC840;        // 25%透明度
+
+// 文字色系
+$color-text-primary: #1C1C1E;          // 主文字（毛玻璃白底用深色）
+$color-text-secondary: #8E8E93;        // 次要文字
+$color-text-muted: #41414d;            // 弱化文字
+
+// 背景色系（毛玻璃）
+$color-bg-glass: #FFFFFFB8;             // 72% 不透明度
+$color-bg-glass-hover: #FFFFFFD9;       // 85% 不透明度
+
+// 座舱环境背景（通透深邃）
+$color-cabin-bg-dark: #c3cde9;
+$color-cabin-bg-mid: #eaedf5;
+$color-cabin-ambient-glow: rgba(123, 158, 200, 0.03);
+
+// 状态氛围光（面板边缘/背景微光，PRD要求状态对应光色）
+$color-ambient-idle: rgba(174, 174, 178, 0.08);       // 待机：浅灰微光
+$color-ambient-listening: rgba(123, 158, 200, 0.12);   // 倾听：淡蓝微光
+$color-ambient-speaking: rgba(107, 168, 165, 0.12);    // 播报：青色调柔光
+$color-ambient-healing: rgba(167, 147, 193, 0.10);     // 疗愈：柔和紫粉光
+
+// 状态色系（低调柔和不刺眼）- 全部用hex避免rgba
+$color-state-idle: #AEAEB299;           // 60%
+$color-state-listening: #7B9EC880;      // 50%
+$color-state-speaking: #6BA8A580;       // 50%
+$color-state-healing: #A793C173;        // 45%
+
+// ==================== 圆角规范（苹果大圆角）====================
+
+$radius-panel: 8px;     // 面板圆角
+$radius-card: 16px;      // 卡片圆角
+$radius-button: 12px;    // 标签圆角
+
+// ==================== 模糊规范 ====================
+
+$blur-glass: 40px;
+
+// ==================== 阴影 ====================
+
+$shadow-panel: 
+  0 8px 32px #00000014,
+  0 2px 8px #0000000A;
+
+// ==================== 字体规范 ====================
+
+$font-family-base: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', sans-serif;
+
+$font-size-title: 18px;       // 标题/状态字
+$font-size-status: 14px;      // 辅助提示字
+$font-size-hint: 13px;        // 提示文字
+
+$font-weight-normal: 400;     // 常规
+$font-weight-medium: 500;     // 中等（不使用粗体）
+
+// ==================== 动画时长 ====================
+
+$anim-panel-enter: 500ms;
+$anim-panel-exit: 400ms;
+$anim-idle-breathe: 3000ms;
+$anim-listen-nod: 1500ms;
+$anim-speak-mouth: 300ms;
+$anim-healing-glow: 2500ms;
+$anim-text-fade: 300ms;
+
+// 简写别名
+$anim-panel-enter: $anim-panel-enter;
+$anim-panel-exit: $anim-panel-exit;
+$anim-idle: $anim-idle-breathe;
+$anim-listening: $anim-listen-nod;
+$anim-speak: $anim-speak-mouth;
+$anim-healing: $anim-healing-glow;
+
+// ==================== 尺寸 ====================
+
+$avatar-width: 240px;                   // 原来200px — 增大20%成为视觉焦点
+$avatar-height: 310px;                  // 原来260px
+
+$panel-max-width: 560px;                // 原来520px — 稍宽增加呼吸感
+$panel-min-height: 480px;               // 原来420px — 更高留白充足
+$panel-padding-x: 56px;                 // 原来48px — 水平留白增大
+$panel-padding-y: 44px;                 // 原来36px — 垂直留白增大
+
+// 内部区域间距
+$section-gap: 1.5rem;                   // 原来1rem — 区块间更大间隔
+$text-area-gap: 1.2rem;                // 文字元素间间距
+
+// ==================== 层级 ====================
+
+$z-base: 100;
+$z-panel: 1000;
+$z-debug: 9999;
+
+// ==================== 常用混入 ====================
+
+/// 毛玻璃效果
+@mixin glass-effect($bg: $color-bg-glass, $blur: $blur-glass) {
+  background: $bg;
+  backdrop-filter: blur($blur);
+  -webkit-backdrop-filter: blur($blur);
+}
+
+/// 苹果式阴影
+@mixin apple-shadow {
+  box-shadow: $shadow-panel;
+}
+
+/// 居中聚焦布局（蔚来风格）
+@mixin cabin-focus-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/// 文字截断
+@mixin text-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/// 安全区域内边距（座舱异形屏适配）
+@mixin safe-area-insets($top: 0, $right: 0, $bottom: 0, $left: 0) {
+  padding-top: calc(#{$top} + env(safe-area-inset-top, 0));
+  padding-right: calc(#{$right} + env(safe-area-inset-right, 0));
+  padding-bottom: calc(#{$bottom} + env(safe-area-inset-bottom, 0));
+  padding-left: calc(#{$left} + env(safe-area-inset-left, 0));
+}
