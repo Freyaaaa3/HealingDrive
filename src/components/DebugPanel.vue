@@ -252,13 +252,192 @@
             </div>
           </div>
         </section>
-    </div>
+
+        <!-- ===== Module 10: 大模型调度 ===== -->
+        <section class="debug-section">
+          <h4>🤖 大模型调度 (M10) ⭐</h4>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">Ollama</span>
+              <span class="value" :class="{ ready: appStore.llmModelState.ollamaReady, danger: !appStore.llmModelState.ollamaReady }">
+                {{ appStore.llmModelState.ollamaReady ? '就绪' : '未连接' }}
+              </span>
+            </div>
+            <div class="info-item">
+              <span class="label">当前模型</span>
+              <span class="value">{{ appStore.llmModelState.currentModelId }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">模型状态</span>
+              <span class="value">{{ appStore.llmModelState.currentStatus }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">API Keys</span>
+              <span class="value">{{ configuredKeyCount }}/{{ totalApiKeyCount }}</span>
+            </div>
+          </div>
+
+          <!-- 模型列表 -->
+          <details class="command-list">
+            <summary>模型列表 ({{ appStore.llmModelState.models.length }})</summary>
+            <div class="model-list">
+              <div
+                v-for="model in appStore.llmModelState.models"
+                :key="model.id"
+                class="model-item"
+                :class="{ active: model.status === 'active', unavailable: model.status === 'unavailable' }"
+              >
+                <div class="model-info">
+                  <span class="model-name">{{ model.name }}</span>
+                  <span class="model-tag" :class="model.isLocal ? 'local' : 'api'">
+                    {{ model.isLocal ? '本地' : 'API' }}
+                  </span>
+                  <span class="model-status" :class="model.status">{{ statusLabel(model.status) }}</span>
+                </div>
+                <button
+                  v-if="model.id !== appStore.llmModelState.currentModelId && model.status !== 'unavailable'"
+                  @click="switchModel(model.id)"
+                  class="action-btn model-switch-btn"
+                  :disabled="isSwitchingModel"
+                >
+                  切换
+                </button>
+              </div>
+            </div>
+          </details>
+
+          <!-- M10 操作按钮 -->
+          <div class="m3-actions">
+            <button @click="testLLMChat" class="action-btn m3-btn" :disabled="!isPanelVisible || isSwitchingModel">
+              💬 测试大模型对话
+            </button>
+            <button @click="refreshModelList" class="action-btn m3-btn secondary">
+              🔄 刷新模型列表
+            </button>
+          </div>
+        </section>
+
+        <!-- ===== Module 11: 疗愈策略&提示词 ===== -->
+        <section class="debug-section">
+          <h4>🧠 策略&提示词 (M11) ⭐</h4>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">策略引擎</span>
+              <span class="value" :class="{ ready: appStore.strategyEngineState.isReady, danger: !appStore.strategyEngineState.isReady }">
+                {{ appStore.strategyEngineState.isReady ? '就绪' : '未初始化' }}
+              </span>
+            </div>
+            <div class="info-item">
+              <span class="label">情景数</span>
+              <span class="value">{{ appStore.strategyEngineState.scenarioCount }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">策略规则数</span>
+              <span class="value">{{ appStore.strategyEngineState.ruleCount }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">缓存命中率</span>
+              <span class="value">{{ strategyCacheRate }}%</span>
+            </div>
+          </div>
+
+          <!-- 最近匹配结果 -->
+          <div class="strategy-match-info">
+            <span class="label">最近匹配:</span>
+            <span class="value" v-if="appStore.strategyEngineState.lastMatchReason">
+              {{ appStore.strategyEngineState.lastMatchReason }}
+              <template v-if="appStore.strategyEngineState.lastMatchMs">
+                ({{ appStore.strategyEngineState.lastMatchMs }}ms)
+              </template>
+            </span>
+            <span class="value muted" v-else>暂无匹配记录</span>
+          </div>
+
+          <!-- 情景列表 -->
+          <details class="command-list">
+            <summary>策略规则列表 ({{ appStore.strategyEngineState.ruleCount }})</summary>
+            <div class="model-list" v-if="strategyRuleList.length > 0">
+              <div
+                v-for="rule in strategyRuleList"
+                :key="rule.id"
+                class="model-item"
+                :class="{ active: rule.id === appStore.strategyEngineState.currentRuleId, unavailable: !rule.enabled }"
+              >
+                <div class="model-info">
+                  <span class="model-name">{{ rule.description }}</span>
+                  <span class="model-tag" :class="rule.enabled ? 'api' : 'local'">
+                    {{ rule.enabled ? '启用' : '停用' }}
+                  </span>
+                </div>
+                <span class="strategy-id">{{ rule.id }}</span>
+              </div>
+            </div>
+          </details>
+
+          <!-- M11 操作按钮 -->
+          <div class="m3-actions">
+            <button @click="testStrategyMatch" class="action-btn m3-btn">
+              🧪 测试策略匹配
+            </button>
+            <button @click="clearStrategyCache" class="action-btn m3-btn secondary">
+              🗑 清除缓存
+            </button>
+          </div>
+        </section>
+
+        <!-- ===== Module 12: 上下文记忆管理 ===== -->
+        <section class="debug-section">
+          <h4>📝 上下文记忆 (M12) ⭐</h4>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">会话状态</span>
+              <span class="value" :class="{ ready: appStore.contextManagerState?.isReady, danger: !appStore.contextManagerState?.isReady }">
+                {{ appStore.contextManagerState?.isReady ? '活跃' : '空闲' }}
+              </span>
+            </div>
+            <div class="info-item">
+              <span class="label">消息总数</span>
+              <span class="value">{{ appStore.contextManagerState?.messageCount || 0 }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">对话轮次</span>
+              <span class="value">{{ appStore.contextManagerState?.turnCount || 0 }}/{{ contextMaxTurns }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">字符数</span>
+              <span class="value" :class="{ danger: isContextNearLimit }">
+                {{ appStore.contextManagerState?.totalChars || 0 }}/{{ contextMaxChars }}
+              </span>
+            </div>
+          </div>
+
+          <!-- 压缩状态 -->
+          <div class="strategy-match-info" v-if="appStore.contextManagerState?.isReady">
+            <span class="label">压缩状态:</span>
+            <span class="value" :class="{ ready: appStore.contextManagerState?.hasCompressed }">
+              {{ appStore.contextManagerState?.hasCompressed ? '已压缩' : '未压缩' }}
+            </span>
+          </div>
+
+          <!-- M12 操作按钮 -->
+          <div class="m3-actions">
+            <button @click="initContext" class="action-btn m3-btn" :disabled="appStore.contextManagerState?.isReady">
+              初始化会话
+            </button>
+            <button @click="clearContext" class="action-btn m3-btn secondary" :disabled="!appStore.contextManagerState?.isReady">
+              清除会话
+            </button>
+          </div>
+        </section>
+
+        </div>
+
+      </div>
 
     <footer class="debug-footer">
       <button type="button" @click="testWakeWord" class="action-btn">模拟唤醒词</button>
       <button type="button" @click="printToConsole" class="action-btn secondary">输出到控制台</button>
     </footer>
-      </div>
     </div>
   </div>
 </template>
@@ -269,6 +448,7 @@ import { useAppStore } from '@/stores/appStore'
 import {
   AvatarState, PanelVisibility, VoiceCommandType, ConversationPhase,
 } from '@/types'
+import type { LLMModelStatus } from '@/types'
 import {
   getAnimationStateList,
   type AnimationStateConfig,
@@ -326,6 +506,198 @@ const recentMessages = computed(() => {
   const msgs = appStore.currentSession?.messages || []
   return msgs.slice(-5)
 })
+
+/** M10: 已配置的 API Key 数量 */
+const configuredKeyCount = computed(() => {
+  return Object.values(appStore.llmModelState.apiKeysConfigured).filter(Boolean).length
+})
+
+/** M10: API Key 总数 */
+const totalApiKeyCount = computed(() => {
+  return Object.keys(appStore.llmModelState.apiKeysConfigured).length
+})
+
+/** M10: 是否正在切换模型 */
+const isSwitchingModel = ref(false)
+
+function statusLabel(status: LLMModelStatus): string {
+  const map: Record<string, string> = {
+    available: '可用',
+    active: '使用中',
+    loading: '加载中',
+    unavailable: '不可用',
+    switching: '切换中',
+  }
+  return map[status] || status
+}
+
+/**
+ * M10: 切换模型
+ */
+async function switchModel(modelId: string) {
+  const hub = (window as any).__HEALING_AGENT__?.modelHub
+  if (!hub) return
+
+  isSwitchingModel.value = true
+  try {
+    const result = await hub.switchModel(modelId)
+    if (result.code === 200) {
+      console.log(`[Debug] 模型切换成功: ${result.model}`)
+    } else {
+      console.warn(`[Debug] 模型切换失败: ${result.content}`)
+      alert(`切换失败: ${result.content}`)
+    }
+  } finally {
+    isSwitchingModel.value = false
+  }
+}
+
+/**
+ * M10: 测试大模型对话
+ */
+async function testLLMChat() {
+  const hub = (window as any).__HEALING_AGENT__?.modelHub
+  if (!hub) {
+    alert('大模型调度中心未初始化')
+    return
+  }
+
+  const testTexts = ['你好，我是小疗', '我最近工作压力很大', '今天开车感觉好累']
+  const text = testTexts[Math.floor(Math.random() * testTexts.length)]
+
+  console.log(`[Debug] 测试大模型对话: "${text}"`)
+
+  const result = await hub.chat({
+    model: hub.getCurrentModelId(),
+    messages: [
+      { role: 'system', content: '你是小疗，智能座舱疗愈助手。回复不超过50字，温柔简洁。' },
+      { role: 'user', content: text },
+    ],
+  })
+
+  console.log(`[Debug] LLM回复 (${result.model}, ${result.elapsedMs}ms):`, result.content)
+
+  if (result.code === 200) {
+    appStore.startSpeaking(result.content)
+    appStore.setAgentResponseText(result.content)
+    const tts = (window as any).__HEALING_AGENT__?.ttsEngine
+    tts?.speak(result.content, undefined, () => {
+      appStore.backToIdle()
+      appStore.setAgentResponseText('')
+    })
+  } else {
+    alert(`模型调用失败: ${result.content}`)
+  }
+}
+
+/**
+ * M10: 刷新模型列表
+ */
+async function refreshModelList() {
+  const hub = (window as any).__HEALING_AGENT__?.modelHub
+  if (!hub) return
+  await hub.init()
+  console.log('[Debug] 模型列表已刷新')
+}
+
+// ==================== M11: 策略引擎调试 ====================
+
+/** 缓存命中率 */
+const strategyCacheRate = computed(() => {
+  const s = appStore.strategyEngineState
+  if (s.totalMatchCount === 0) return 0
+  return Math.round((s.cacheHitCount / s.totalMatchCount) * 100)
+})
+
+/** 策略规则列表 */
+const strategyRuleList = ref<any[]>([])
+
+/** 加载策略规则列表 */
+function loadStrategyRules() {
+  const engine = (window as any).__HEALING_AGENT__?.strategyEngine
+  if (engine) {
+    strategyRuleList.value = engine.getRules()
+  }
+}
+
+/** 测试策略匹配 */
+function testStrategyMatch() {
+  const engine = (window as any).__HEALING_AGENT__?.strategyEngine
+  if (!engine) {
+    alert('策略引擎未初始化')
+    return
+  }
+
+  // 随机生成模拟情绪结果
+  const emotions = ['anger', 'anxiety', 'irritability', 'fatigue', 'calm']
+  const scenarios = ['traffic_jam', 'highway', 'city', 'idle', 'night', 'general']
+  const emotion = emotions[Math.floor(Math.random() * emotions.length)]
+  const scenario = scenarios[Math.floor(Math.random() * scenarios.length)]
+
+  const mockEmotion = {
+    emotion,
+    intensity: Math.random() > 0.5 ? 'high' : 'medium',
+    confidence: 0.7 + Math.random() * 0.3,
+    scenario,
+    weightedScores: {},
+  }
+
+  const result = engine.match(mockEmotion, null)
+  console.log('[Debug] 策略匹配测试:', {
+    emotion,
+    scenario,
+    matchedRule: result.ruleId,
+    reason: result.matchReason,
+    isFallback: result.isFallback,
+    promptLength: result.systemPrompt.length,
+    fewShotCount: result.fewShots.length,
+    personalityTags: result.injectedVars.personalityTags || '无',
+  })
+
+  // 重新加载规则列表以更新UI
+  loadStrategyRules()
+}
+
+/** 清除策略缓存 */
+function clearStrategyCache() {
+  const engine = (window as any).__HEALING_AGENT__?.strategyEngine
+  if (engine) {
+    engine.clearCache()
+    console.log('[Debug] 策略缓存已清除')
+  }
+}
+
+// ==================== M12: 上下文记忆管理 ====================
+
+/** 上下文阈值配置（从常量读取） */
+const contextMaxTurns = 8  // CONTEXT_MAX_TURNS
+const contextMaxChars = 1500  // CONTEXT_MAX_CHARS
+
+/** 是否接近阈值（80%以上） */
+const isContextNearLimit = computed(() => {
+  if (!appStore.contextManagerState?.isReady) return false
+  const turnRatio = (appStore.contextManagerState.turnCount || 0) / contextMaxTurns
+  const charRatio = (appStore.contextManagerState.totalChars || 0) / contextMaxChars
+  return turnRatio > 0.8 || charRatio > 0.8
+})
+
+/** 初始化上下文会话 */
+function initContext() {
+  const mgr = (window as any).__HEALING_AGENT__?.contextManager
+  if (mgr) {
+    const sessionId = mgr.initSession()
+    console.log(`[Debug] 上下文会话已初始化: ${sessionId}`)
+  }
+}
+
+/** 清除上下文会话 */
+function clearContext() {
+  const mgr = (window as any).__HEALING_AGENT__?.contextManager
+  if (mgr) {
+    mgr.clearSession()
+    console.log('[Debug] 上下文会话已清除')
+  }
+}
 
 function togglePanel() {
   if (isPanelVisible.value) {
@@ -461,7 +833,7 @@ function testWakeWord() {
 }
 
 function printToConsole() {
-  console.group('🔧 Healing Agent State Dump (M1+M2+M3+M4+M5+M6+M7+M8+M9)')
+  console.group('🔧 Healing Agent State Dump (M1~M11)')
   console.log('=== Module 1 ===')
   console.log('Init Phase:', appStore.initPhase)
   console.log('Run Mode:', appStore.runMode)
@@ -508,6 +880,23 @@ function printToConsole() {
   console.log('Global Error State:', appStore.globalErrorState)
   console.log('Audio Channel State:', appStore.audioChannelState)
   console.log('Error:', appStore.error)
+  console.log('')
+  console.log('=== Module 10 (新增) ===')
+  console.log('LLM Model State:', appStore.llmModelState)
+  console.log('')
+  console.log('=== Module 11 (新增) ===')
+  console.log('Strategy Engine State:', appStore.strategyEngineState)
+  const lastStrategy = (window as any).__HEALING_AGENT__?.voiceInteraction?.getLastStrategyResult?.()
+  if (lastStrategy) {
+    console.log('Last Strategy Result:', lastStrategy)
+  }
+  console.log('')
+  console.log('=== Module 12 (新增) ===')
+  console.log('Context Manager State:', appStore.contextManagerState)
+  const contextMgr = (window as any).__HEALING_AGENT__?.contextManager
+  if (contextMgr) {
+    console.log('Context Stats:', contextMgr.getStats())
+  }
   console.groupEnd()
   alert('已输出到浏览器控制台 (F12)')
 }
@@ -1125,6 +1514,111 @@ function printToConsole() {
   color: $color-text-secondary;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+// M10 模型列表
+.model-list {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+
+  .model-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.35rem 0.5rem;
+    border-radius: $radius-button;
+    background: rgba(255, 255, 255, 0.5);
+    border: 0.5px solid rgba(0, 0, 0, 0.04);
+    transition: all 0.2s;
+
+    &.active {
+      background: rgba(123, 158, 200, 0.15);
+      border-color: rgba(123, 158, 200, 0.3);
+    }
+
+    &.unavailable {
+      opacity: 0.45;
+    }
+
+    .model-info {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.75rem;
+    }
+
+    .model-name {
+      font-weight: 500;
+      color: $color-text-primary;
+    }
+
+    .model-tag {
+      font-size: 0.58rem;
+      padding: 1px 5px;
+      border-radius: 3px;
+
+      &.local {
+        background: rgba(76, 175, 80, 0.15);
+        color: #4CAF50;
+      }
+
+      &.api {
+        background: rgba(123, 158, 200, 0.15);
+        color: $color-primary;
+      }
+    }
+
+    .model-status {
+      font-size: 0.6rem;
+
+      &.available { color: #4CAF50; }
+      &.active { color: $color-primary; font-weight: 600; }
+      &.unavailable { color: #999; }
+    }
+
+    .model-switch-btn {
+      padding: 2px 10px;
+      font-size: 0.68rem;
+      flex: none;
+    }
+  }
+}
+
+// M11 策略匹配信息
+.strategy-match-info {
+  margin-top: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: $radius-button;
+  background: rgba(255, 255, 255, 0.4);
+  font-size: 0.72rem;
+  display: flex;
+  gap: 0.4rem;
+  align-items: baseline;
+
+  .label {
+    color: $color-text-secondary;
+    flex-shrink: 0;
+  }
+
+  .value {
+    color: $color-text-primary;
+    word-break: break-all;
+
+    &.muted {
+      color: #999;
+      font-style: italic;
+    }
+  }
+
+  .strategy-id {
+    font-size: 0.6rem;
+    color: #999;
+    font-family: monospace;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
 }
 
 .action-btn {

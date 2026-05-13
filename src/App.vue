@@ -16,20 +16,100 @@
           <p class="status-text">{{ appStore.getPhaseDescription() }}</p>
         </div>
 
-        <!-- ===== 已就绪但未唤醒：待命提示 ===== -->
-        <Transition name="fade">
-          <div
-            class="ready-notice"
-            v-if="appStore.isReady && !appStore.isPanelVisible()"
-          >
-            <div class="ready-icon">
-              <div class="icon-circle"></div>
+        <!-- ===== 已就绪但未唤醒：待命提示 + LLM对话测试 ===== -->
+        <div v-else class="ready-area">
+          <Transition name="fade">
+            <div
+              class="ready-notice"
+              v-if="!appStore.isPanelVisible()"
+            >
+              <div class="ready-icon">
+                <div class="icon-circle"></div>
+              </div>
+              <p class="ready-title">疗愈Agent 已就绪</p>
+              <p class="wake-hint">说出 "<strong>{{ appStore.oemConfigState.config.wakeWord }}</strong>" 唤醒我</p>
+              <p class="brand-tagline">{{ appStore.oemConfigState.config.brandTagline }}</p>
             </div>
-            <p class="ready-title">疗愈Agent 已就绪</p>
-            <p class="wake-hint">说出 "<strong>{{ appStore.oemConfigState.config.wakeWord }}</strong>" 唤醒我</p>
-            <p class="brand-tagline">{{ appStore.oemConfigState.config.brandTagline }}</p>
+          </Transition>
+
+          <!-- ===== 主功能：测试大模型对话 ===== -->
+          <div class="llm-chat-section">
+            <div class="llm-chat-header">
+              <span class="llm-chat-title">AI 对话测试</span>
+              <span class="llm-model-badge" :class="{ online: appStore.llmModelState.ollamaReady }">
+                {{ appStore.llmModelState.currentModelId }}
+              </span>
+            </div>
+
+            <!-- ===== 形象展示区（面板拉起时显示形象，收起时显示对话） ===== -->
+            <div class="llm-chat-stage">
+              <!-- 面板可见：显示虚拟形象 -->
+              <Transition name="stage-crossfade">
+                <div v-if="appStore.isPanelVisible()" class="llm-stage-avatar">
+                  <AvatarDisplay :state="appStore.avatarAnimState" />
+                  <!-- Agent 回复文本叠在形象下方 -->
+                  <Transition name="text-fade" mode="out-in">
+                    <p v-if="appStore.agentResponseText" class="llm-stage-response">
+                      {{ appStore.agentResponseText }}
+                    </p>
+                  </Transition>
+                </div>
+              </Transition>
+
+              <!-- 面板不可见：显示对话消息列表 -->
+              <Transition name="stage-crossfade">
+                <div v-if="!appStore.isPanelVisible()" class="llm-chat-messages" ref="chatMessagesRef">
+                  <div v-if="chatHistory.length === 0" class="llm-chat-empty">
+                    <p>输入消息，测试大模型对话能力</p>
+                  </div>
+                  <div
+                    v-for="(msg, idx) in chatHistory"
+                    :key="idx"
+                    class="llm-msg"
+                    :class="msg.role"
+                  >
+                    <span class="llm-msg-role">{{ msg.role === 'user' ? '你' : 'AI' }}</span>
+                    <div class="llm-msg-bubble">
+                      <p>{{ msg.content }}</p>
+                      <span v-if="msg.elapsed" class="llm-msg-time">{{ msg.elapsed }}ms</span>
+                    </div>
+                  </div>
+                  <div v-if="llmLoading" class="llm-msg ai">
+                    <span class="llm-msg-role">AI</span>
+                    <div class="llm-msg-bubble typing">
+                      <span class="typing-dot"></span>
+                      <span class="typing-dot"></span>
+                      <span class="typing-dot"></span>
+                    </div>
+                  </div>
+                </div>
+              </Transition>
+            </div>
+
+            <!-- 输入区 -->
+            <form class="llm-chat-input" @submit.prevent="sendLLMMessage">
+              <input
+                v-model="llmInput"
+                type="text"
+                placeholder="输入消息..."
+                :disabled="llmLoading"
+                class="llm-input-field"
+              />
+              <button
+                type="submit"
+                class="llm-send-btn"
+                :disabled="llmLoading || !llmInput.trim()"
+              >
+                {{ llmLoading ? '思考中...' : '发送' }}
+              </button>
+            </form>
+
+            <p class="llm-chat-hint">
+              当前模型: {{ appStore.llmModelState.currentModelId }}
+              <span v-if="!appStore.llmModelState.ollamaReady" class="llm-status-offline"> (Ollama未连接)</span>
+            </p>
           </div>
-        </Transition>
+        </div>
       </div>
       <div class="stage-gutter stage-gutter--right" aria-hidden="true" />
     </main>
@@ -51,7 +131,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
+import { onMounted, onUnmounted, computed, ref, watch, nextTick } from 'vue'
 import { useAppStore } from '@/stores/appStore'
 import { LifecycleManager } from '@/core/LifecycleManager'
 import { AvatarAnimationController } from '@/core/AvatarAnimationController'
@@ -68,15 +148,89 @@ import { DataStore } from '@/services/DataStore'
 import { OEMConfig } from '@/services/OEMConfig'
 import { GlobalErrorHandler } from '@/core/GlobalErrorHandler'
 import { AudioPriorityManager } from '@/core/AudioPriorityManager'
+import { ModelHub } from '@/core/ModelHub'
+import { StrategyEngine } from '@/core/StrategyEngine'
+import { PromptManager } from '@/services/PromptManager'
+import { ContextManager } from '@/core/ContextManager'
 import { WakeStatus, ConversationPhase, VoiceCommandType, EmotionType, ClearConfirmState } from '@/types'
 import DebugPanel from './components/DebugPanel.vue'
 import VisualizationPanel from './components/VisualizationPanel.vue'
 import HealingPanel from './components/HealingPanel.vue'
+import AvatarDisplay from './components/AvatarDisplay.vue'
 
 const appStore = useAppStore()
 
 // Demo配置
 const showDebug = ref(import.meta.env.DEV)
+
+// ==================== LLM 对话测试 ====================
+
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  elapsed?: number
+}
+
+const llmInput = ref('')
+const llmLoading = ref(false)
+const chatHistory = ref<ChatMessage[]>([])
+const chatMessagesRef = ref<HTMLElement | null>(null)
+
+async function sendLLMMessage() {
+  const text = llmInput.value.trim()
+  if (!text || llmLoading.value || !modelHub) return
+
+  llmInput.value = ''
+  chatHistory.value.push({ role: 'user', content: text })
+  await scrollChatBottom()
+
+  llmLoading.value = true
+  try {
+    const messages = chatHistory.value.map(m => ({
+      role: m.role as 'user' | 'assistant' | 'system',
+      content: m.content,
+    }))
+
+    // 在最前面插入系统提示词
+    messages.unshift({
+      role: 'system',
+      content: '你是小疗，智能座舱疗愈助手。回复温柔简洁，不超过80字。',
+    })
+
+    const result = await modelHub.chat({
+      model: modelHub.getCurrentModelId(),
+      messages,
+    })
+
+    if (result.code === 200) {
+      chatHistory.value.push({
+        role: 'assistant',
+        content: result.content,
+        elapsed: result.elapsedMs,
+      })
+    } else {
+      chatHistory.value.push({
+        role: 'assistant',
+        content: `[错误] ${result.content}`,
+      })
+    }
+  } catch (err) {
+    chatHistory.value.push({
+      role: 'assistant',
+      content: `[异常] ${(err as Error).message}`,
+    })
+  } finally {
+    llmLoading.value = false
+    await scrollChatBottom()
+  }
+}
+
+async function scrollChatBottom() {
+  await nextTick()
+  if (chatMessagesRef.value) {
+    chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight
+  }
+}
 
 // ==================== 核心服务实例 ====================
 
@@ -110,6 +264,16 @@ let oemConfig: OEMConfig | null = null
 let globalErrorHandler: GlobalErrorHandler | null = null
 let audioPriorityMgr: AudioPriorityManager | null = null
 
+// Module 10 实例
+let modelHub: ModelHub | null = null
+
+// Module 11 实例
+let strategyEngine: StrategyEngine | null = null
+let promptManager: PromptManager | null = null
+
+// Module 12 实例
+let contextManager: ContextManager | null = null
+
 // ==================== 生命周期 ====================
 
 onMounted(async () => {
@@ -133,6 +297,28 @@ onMounted(async () => {
   audioPriorityMgr.onChange((state) => {
     appStore.setAudioChannelState(state)
   })
+
+  // --- Module 10: 初始化大模型调度中心 ---
+  modelHub = new ModelHub()
+  const llmState = await modelHub.init()
+  appStore.setLLMModelState(llmState)
+  modelHub.onChange((state) => {
+    appStore.setLLMModelState(state)
+  })
+
+  // --- Module 11: 初始化策略引擎 + 提示词管理器 ---
+  strategyEngine = new StrategyEngine()
+  const strategyState = strategyEngine.init()
+  appStore.setStrategyEngineState(strategyState)
+  strategyEngine.onChange((state) => {
+    appStore.setStrategyEngineState(state)
+  })
+  promptManager = new PromptManager()
+  console.log('[App] M11 策略引擎&提示词管理器初始化完成')
+
+  // --- Module 12: 初始化上下文管理器 ---
+  contextManager = new ContextManager()
+  console.log('[App] M12 上下文管理器初始化完成')
 
   // --- Module 1: 基础初始化 ---
   lifecycleManager = new LifecycleManager(appStore)
@@ -192,6 +378,13 @@ onMounted(async () => {
     // M9 新增
     globalErrorHandler,
     audioPriorityMgr,
+    // M10 新增
+    modelHub,
+    // M11 新增
+    strategyEngine,
+    promptManager,
+    // M12 新增
+    contextManager,
   }
 })
 
@@ -208,6 +401,9 @@ onUnmounted(() => {
   dataStore?.destroy()        // M7: 清理写入队列
   globalErrorHandler?.destroy()  // M9: 移除全局兜底
   audioPriorityMgr?.destroy()    // M9: 清理通道状态
+  modelHub?.destroy()            // M10: 清理回调
+  strategyEngine?.destroy()      // M11: 清理缓存和回调
+  contextManager?.destroy()     // M12: 清理上下文和回调
 })
 
 // ==================== Module 3: 语音引擎初始化 ====================
@@ -272,6 +468,16 @@ async function initVoiceEngines(): Promise<void> {
 
   // 注入到对话管理器
   voiceInteraction.setHealingService(healingService)
+
+  // M10: 注入大模型调度中心
+  voiceInteraction.setModelHub(modelHub)
+
+  // M11: 注入策略引擎 + 提示词管理器
+  voiceInteraction.setStrategyEngine(strategyEngine)
+  voiceInteraction.setPromptManager(promptManager)
+
+  // M12: 注入上下文管理器
+  voiceInteraction.setContextManager(contextManager)
 
   // 疗愈服务状态同步到 store
   healingService.setCallbacks({
@@ -759,6 +965,301 @@ function onPanelLeft() {
   }
 }
 
+// ==================== 就绪区域（含LLM对话）====================
+
+.ready-area {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+// ==================== LLM 对话测试（主功能）====================
+
+.llm-chat-section {
+  width: 100%;
+  max-width: 520px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: $radius-panel;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  overflow: hidden;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.15),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+}
+
+.llm-chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.8rem 1.2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.llm-chat-title {
+  font-size: 0.82rem;
+  font-weight: $font-weight-medium;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 0.04em;
+}
+
+.llm-model-badge {
+  font-size: 0.68rem;
+  font-weight: $font-weight-normal;
+  color: rgba(255, 255, 255, 0.35);
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+
+  &.online {
+    color: rgba(76, 175, 80, 0.85);
+    border-color: rgba(76, 175, 80, 0.2);
+    background: rgba(76, 175, 80, 0.06);
+  }
+}
+
+// 消息展示区 / 形象展示区（共享同一空间）
+.llm-chat-stage {
+  position: relative;
+  min-height: 260px;
+  overflow: hidden;
+}
+
+// 面板可见时：形象居中展示
+.llm-stage-avatar {
+  width: 100%;
+  height: 260px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+
+  :deep(.avatar-container) {
+    transform: scale(0.85);
+    opacity: 0.9;
+  }
+}
+
+.llm-stage-response {
+  font-size: 0.8rem;
+  font-weight: $font-weight-medium;
+  color: rgba(255, 255, 255, 0.85);
+  margin: 0;
+  padding: 0.5rem 1.2rem;
+  text-align: center;
+  line-height: 1.6;
+  max-width: 85%;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: $radius-card;
+}
+
+// 面板不可见时：对话消息列表
+.llm-chat-messages {
+  height: 260px;
+  overflow-y: auto;
+  padding: 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+
+  &::-webkit-scrollbar {
+    width: 3px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 2px;
+  }
+}
+
+.llm-chat-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  p {
+    color: rgba(255, 255, 255, 0.2);
+    font-size: 0.78rem;
+    margin: 0;
+    letter-spacing: 0.02em;
+  }
+}
+
+// 单条消息
+.llm-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+
+  &.user {
+    flex-direction: row-reverse;
+  }
+
+  .llm-msg-role {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    font-weight: $font-weight-medium;
+    margin-top: 2px;
+  }
+
+  &.user .llm-msg-role {
+    background: rgba(123, 158, 200, 0.2);
+    color: rgba(123, 158, 200, 0.85);
+  }
+
+  &.ai .llm-msg-role {
+    background: rgba(107, 168, 165, 0.2);
+    color: rgba(107, 168, 165, 0.85);
+  }
+
+  .llm-msg-bubble {
+    max-width: 78%;
+    padding: 0.55rem 0.85rem;
+    border-radius: 12px;
+    position: relative;
+
+    p {
+      margin: 0;
+      font-size: 0.8rem;
+      line-height: 1.55;
+      color: rgba(255, 255, 255, 0.85);
+      word-break: break-word;
+    }
+  }
+
+  &.user .llm-msg-bubble {
+    background: rgba(123, 158, 200, 0.15);
+    border: 1px solid rgba(123, 158, 200, 0.1);
+    border-top-right-radius: 4px;
+  }
+
+  &.ai .llm-msg-bubble {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-top-left-radius: 4px;
+  }
+
+  .llm-msg-time {
+    display: block;
+    text-align: right;
+    font-size: 0.58rem;
+    color: rgba(255, 255, 255, 0.18);
+    margin-top: 0.3rem;
+  }
+}
+
+// 输入打字动画
+.llm-msg-bubble.typing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.7rem 1rem;
+
+  .typing-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: rgba(107, 168, 165, 0.5);
+    animation: typing-bounce 1.2s ease-in-out infinite;
+
+    &:nth-child(2) { animation-delay: 0.15s; }
+    &:nth-child(3) { animation-delay: 0.3s; }
+  }
+}
+
+@keyframes typing-bounce {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+// 输入区域
+.llm-chat-input {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.llm-input-field {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: $radius-button;
+  padding: 0.5rem 0.8rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.8rem;
+  outline: none;
+  transition: border-color 0.2s ease, background 0.2s ease;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.2);
+  }
+
+  &:focus {
+    border-color: rgba(123, 158, 200, 0.3);
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.llm-send-btn {
+  flex-shrink: 0;
+  padding: 0.5rem 1.2rem;
+  background: rgba(123, 158, 200, 0.2);
+  border: 1px solid rgba(123, 158, 200, 0.15);
+  border-radius: $radius-button;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.78rem;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+
+  &:hover:not(:disabled) {
+    background: rgba(123, 158, 200, 0.3);
+    border-color: rgba(123, 158, 200, 0.25);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+
+.llm-chat-hint {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.2);
+  margin: 0;
+  padding: 0.4rem 1rem 0.6rem;
+  text-align: center;
+  letter-spacing: 0.02em;
+}
+
+.llm-status-offline {
+  color: rgba(244, 67, 54, 0.7);
+}
+
 // ==================== 动画关键帧 ====================
 
 @keyframes pulse-animation {
@@ -797,5 +1298,26 @@ function onPanelLeft() {
 .fade-leave-to {
   opacity: 0;
   transform: translateY(8px);
+}
+
+// stage 区域切换过渡（形象 ↔ 对话）
+.stage-crossfade-enter-active,
+.stage-crossfade-leave-active {
+  transition: opacity 0.35s ease;
+}
+.stage-crossfade-enter-from,
+.stage-crossfade-leave-to {
+  opacity: 0;
+}
+
+// 文字渐变过渡
+.text-fade-enter-active,
+.text-fade-leave-active {
+  transition: all 0.25s ease;
+}
+.text-fade-enter-from,
+.text-fade-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 </style>

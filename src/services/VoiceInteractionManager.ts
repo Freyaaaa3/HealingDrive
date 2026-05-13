@@ -19,6 +19,9 @@ import { EmotionRecognitionEngine } from './EmotionRecognition'
 import { HealingService } from './HealingService'
 import { useAppStore } from '@/stores/appStore'
 import { ErrorSeverity, ErrorSource } from '@/types'
+import type { LLMMessage, StrategyEngineResult } from '@/types'
+import { FALLBACK_RESPONSES } from '@/config/constants'
+import { ContextManager } from '@/core/ContextManager'
 
 /** 对话事件回调集合 */
 export interface VoiceInteractionCallbacks {
@@ -59,6 +62,16 @@ export class VoiceInteractionManager {
   private emotionEngine: EmotionRecognitionEngine | null
   // M5: 核心疗愈服务（可选注入）
   private healingService: HealingService | null
+  // M10: 大模型调度中心（可选注入）
+  private modelHub: any | null
+  // M11: 策略引擎（可选注入）
+  private strategyEngine: any | null
+  // M11: 提示词管理器（可选注入）
+  private promptManager: any | null
+  // M11: 最近一次策略匹配结果
+  private lastStrategyResult: StrategyEngineResult | null = null
+  // M12: 上下文管理器（可选注入）
+  private contextManager: ContextManager | null = null
   // M5: 当前情绪/画像上下文（供EmpatheticResponder使用）
   private currentEmotionResult: EmotionResult | null = null
 
@@ -148,6 +161,31 @@ export class VoiceInteractionManager {
     this.healingService = service
   }
 
+  /** 注入大模型调度中心 (M10) */
+  setModelHub(hub: any | null): void {
+    this.modelHub = hub
+  }
+
+  /** 注入策略引擎 (M11) */
+  setStrategyEngine(engine: any | null): void {
+    this.strategyEngine = engine
+  }
+
+  /** 注入提示词管理器 (M11) */
+  setPromptManager(manager: any | null): void {
+    this.promptManager = manager
+  }
+
+  /** 注入上下文管理器 (M12) */
+  setContextManager(manager: ContextManager | null): void {
+    this.contextManager = manager
+  }
+
+  /** 获取最近一次策略匹配结果 (M11) */
+  getLastStrategyResult(): StrategyEngineResult | null {
+    return this.lastStrategyResult
+  }
+
   /**
    * 启动对话系统（唤醒成功后调用）
    */
@@ -201,6 +239,11 @@ export class VoiceInteractionManager {
     this.setPhase(ConversationPhase.IDLE)
     this.currentSession = null
     
+    // M12: 清除上下文管理器
+    if (this.contextManager) {
+      this.contextManager.clearSession()
+    }
+    
     console.log('[VoiceInteraction] 对话系统已停止')
   }
 
@@ -248,7 +291,17 @@ export class VoiceInteractionManager {
 
     console.log(`[VoiceInteraction] 收到用户输入: "${text}"`)
 
-    // 1. 添加到对话历史
+    // M12: 初始化上下文（如果未初始化）
+    if (this.contextManager && !this.contextManager.hasActiveSession()) {
+      this.contextManager.initSession()
+    }
+
+    // M12: 添加用户消息到上下文
+    if (this.contextManager) {
+      this.contextManager.addUserMessage(text)
+    }
+
+    // 1. 添加到对话历史（原有逻辑）
     this.addMessage('user', text)
 
     // 2. 通知UI用户在说话
@@ -342,17 +395,22 @@ export class VoiceInteractionManager {
 
   /**
    * 生成回复并播报
+   * M10: 优先使用 ModelHub 调用大模型，其次降级到 EmpatheticResponder，最后降级到 Demo 回复
    */
   private async generateAndSpeakResponse(userText: string, command: VoiceCommandType): Promise<void> {
     this.setPhase(ConversationPhase.PROCESSING)
 
     try {
-      // 生成回复文本
-      // M5: 优先使用 EmpatheticResponder（情绪感知），否则降级到原始Demo回复
       let responseText: string
-      if (this.healingService) {
+
+      // M10: 优先通过 ModelHub 调用大模型
+      if (this.modelHub) {
+        responseText = await this.generateLLMResponse(userText)
+      } else if (this.healingService) {
+        // M5: 降级使用 EmpatheticResponder（情绪感知）
         responseText = this.generateEmpatheticResponse(userText, command)
       } else {
+        // 原始 Demo 回复
         responseText = this.generateDemoResponse(userText, command)
       }
       
@@ -404,6 +462,151 @@ export class VoiceInteractionManager {
    * Demo版回复生成器
    * 根据关键词匹配选择合适的温柔治愈回复
    */
+  // ==================== M10+M11: 大模型调用（策略引擎驱动）====================
+
+  /**
+   * 通过 ModelHub 调用大模型生成回复
+   * M11 升级：策略引擎匹配 → PromptManager 组装完整 messages → ModelHub.chat()
+   */
+  private async generateLLMResponse(userText: string): Promise<string> {
+    try {
+      const store = useAppStore()
+
+      // M11: 策略引擎匹配（如果有 StrategyEngine）
+      let strategyResult: any = null
+      if (this.strategyEngine) {
+        const emotion = this.currentEmotionResult
+        const profile = store.enhancedProfile
+        strategyResult = this.strategyEngine.match(emotion, profile)
+        this.lastStrategyResult = strategyResult
+        console.log(`[VoiceInteraction] 策略匹配: ${strategyResult.ruleId} (${strategyResult.matchReason})`)
+      }
+
+      // M12: 构建对话上下文（优先使用 ContextManager）
+      let contextMessages: LLMMessage[] = []
+
+      if (this.contextManager && this.contextManager.hasActiveSession()) {
+        // 使用 ContextManager 管理的上下文
+        contextMessages = this.contextManager.getContext()
+        console.log(`[VoiceInteraction] 使用ContextManager上下文: ${contextMessages.length}条消息`)
+      } else {
+        // 降级：从 currentSession 构建
+        if (this.currentSession) {
+          const recentMessages = this.currentSession.messages.slice(-10)
+          for (const msg of recentMessages) {
+            if (msg.role === 'user' || msg.role === 'agent') {
+              contextMessages.push({
+                role: msg.role === 'agent' ? 'assistant' : 'user',
+                content: msg.content,
+              })
+            }
+          }
+        }
+      }
+
+      // 构建完整 messages
+      let messages: LLMMessage[]
+
+      if (this.promptManager && strategyResult) {
+        // M11 完整路径：PromptManager 组装（策略模板 + Few-shot + 历史）
+        messages = this.promptManager.buildMessages(strategyResult, {
+          emotionResult: this.currentEmotionResult,
+          scenario: this.currentEmotionResult?.scenario || 'general',
+          enhancedProfile: store.enhancedProfile,
+          personalizedStyle: store.personalizedStyle,
+          oemStyle: store.oemConfigState.config.healingStyle,
+          conversationHistory: contextMessages,
+          currentTime: new Date(),
+          isOEM: store.oemConfigState.isOEM,
+        })
+        // 追加当前用户消息
+        messages.push({ role: 'user', content: userText })
+      } else {
+        // M10 降级路径：使用 buildSystemPrompt() + 简单拼接
+        const systemPrompt = this.buildSystemPrompt()
+        messages = [
+          { role: 'system', content: systemPrompt },
+          ...contextMessages,
+          { role: 'user', content: userText },
+        ]
+      }
+
+      // 调用 ModelHub
+      const result = await this.modelHub.chat({
+        model: this.modelHub.getCurrentModelId(),
+        messages,
+      })
+
+      if (result.code === 200 && result.content) {
+        const strategyInfo = strategyResult ? ` [策略:${strategyResult.ruleId}]` : ''
+
+        // M12: 添加助手回复到上下文
+        if (this.contextManager && this.contextManager.hasActiveSession()) {
+          this.contextManager.addAssistantMessage(result.content)
+        }
+
+        console.log(`[VoiceInteraction] LLM回复${strategyInfo} (${result.model}, ${result.elapsedMs}ms): "${result.content.substring(0, 50)}..."`)
+        return result.content
+      }
+
+      // 模型调用失败，降级
+      console.warn(`[VoiceInteraction] LLM调用失败(${result.code}): ${result.content}`)
+      return FALLBACK_RESPONSES.llm_timeout || '让我想想怎么陪你更好。'
+    } catch (err) {
+      console.error('[VoiceInteraction] LLM异常:', err)
+      return FALLBACK_RESPONSES.general_comfort || '我一直在你身边。'
+    }
+  }
+
+  /**
+   * 构建大模型系统提示词（M10降级路径，当M11 StrategyEngine不可用时使用）
+   * 包含：角色设定 + 情绪上下文 + 风格指导
+   */
+  private buildSystemPrompt(): string {
+    const emotion = this.currentEmotionResult
+    const store = useAppStore()
+    const style = store.personalizedStyle
+    const oemStyle = store.oemConfigState.config.healingStyle
+
+    let prompt = `你是"小疗"，一款智能座舱疗愈助手的虚拟形象。你正在陪伴一位正在开车的司机。
+
+核心规则：
+1. 语气温柔、耐心、简洁（回复不超过80字）
+2. 不要询问驾驶操作或让司机分心
+3. 如果司机情绪不好，先共情再适度引导
+4. 用口语化表达，避免书面语
+5. 不要重复司机说过的负面内容`
+
+    // 注入情绪上下文
+    if (emotion) {
+      const emotionMap: Record<string, string> = {
+        anger: '愤怒',
+        anxiety: '焦虑',
+        irritability: '烦躁',
+        fatigue: '疲劳',
+        calm: '平稳',
+      }
+      prompt += `\n\n当前司机情绪状态：${emotionMap[emotion.emotion] || emotion.emotion}（${emotion.intensity === 'high' ? '高强度' : emotion.intensity === 'medium' ? '中等' : '轻微'}）`
+    }
+
+    // 注入个性化风格
+    if (style) {
+      if (style.empathyLevel > 0.7) prompt += '\n请使用高度共情的语言，展现深入的理解和关怀'
+      if (style.verbosity < 0.3) prompt += '\n请保持回复简短精炼'
+      if (style.chattyStyle) prompt += '\n可以适度闲聊，活跃氛围'
+      if (style.quietStyle) prompt += '\n使用安静陪伴式语气，多倾听少建议'
+    }
+
+    // 车企风格
+    if (oemStyle === 'calm') {
+      prompt += '\n使用沉稳理性的表达风格，去除语气词，保持专业感'
+    }
+
+    return prompt
+  }
+
+  // ==================== Demo 大模型回复（降级兜底）====================
+
   private generateDemoResponse(userText: string, command: VoiceCommandType): string {
     let category = 'default'
     const lowerText = userText.toLowerCase()

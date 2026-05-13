@@ -47,6 +47,10 @@ import {
   // Module 9 类型
   GlobalErrorState,
   AudioChannelState,
+  // Module 10 类型
+  LLMModelState,
+  // Module 11 类型
+  StrategyEngineState,
 } from '@/types'
 
 export const useAppStore = defineStore('app', () => {
@@ -183,6 +187,47 @@ export const useAppStore = defineStore('app', () => {
       brandTagline: 'Healing Drive · 智能座舱疗愈陪伴',
     },
     loadSource: 'demo-default',
+  })
+
+  // ==================== Module 10: 大模型调度状态 ====================
+
+  /** 大模型调度状态 */
+  const llmModelState = ref<LLMModelState>({
+    currentModelId: 'qwen2.5:7b',
+    currentStatus: 'available',
+    models: [],
+    ollamaReady: false,
+    apiKeysConfigured: {},
+    lastRequestMs: null,
+    lastRequestTime: null,
+  })
+
+  // ==================== Module 11: 策略引擎状态 ====================
+
+  /** 策略引擎状态 */
+  const strategyEngineState = ref<StrategyEngineState>({
+    isReady: false,
+    currentRuleId: null,
+    currentScenario: 'general',
+    scenarioCount: 0,
+    ruleCount: 0,
+    lastMatchMs: null,
+    lastMatchReason: null,
+    cacheHitCount: 0,
+    totalMatchCount: 0,
+  })
+
+  // ==================== Module 12: 上下文管理器状态 ====================
+
+  /** 上下文管理器状态 */
+  const contextManagerState = ref<ContextManagerState>({
+    isReady: false,
+    sessionId: null,
+    messageCount: 0,
+    turnCount: 0,
+    totalChars: 0,
+    hasCompressed: false,
+    lastCompressTime: null,
   })
 
   // ==================== Module 1 Actions ====================
@@ -578,6 +623,27 @@ export const useAppStore = defineStore('app', () => {
     busyPriority.value = state.busyPriority
   }
 
+  // ==================== Module 10 Actions：大模型调度 ====================
+
+  /** 更新大模型调度状态 */
+  function setLLMModelState(state: LLMModelState) {
+    llmModelState.value = state
+  }
+
+  // ==================== Module 11 Actions：策略引擎 ====================
+
+  /** 更新策略引擎状态 */
+  function setStrategyEngineState(state: StrategyEngineState) {
+    strategyEngineState.value = state
+  }
+
+  // ==================== Module 12 Actions：上下文管理器 ====================
+
+  /** 更新上下文管理器状态 */
+  function setContextManagerState(state: ContextManagerState) {
+    contextManagerState.value = state
+  }
+
   // ==================== Getters ====================
 
   const isFullMode = (): boolean => runMode.value === RunMode.FULL
@@ -673,6 +739,15 @@ export const useAppStore = defineStore('app', () => {
     globalErrorState,
     audioChannelState,
 
+    // ===== Module 10 State: 大模型调度 =====
+    llmModelState,
+
+    // ===== Module 11 State: 策略引擎 =====
+    strategyEngineState,
+
+    // ===== Module 12 State: 上下文管理器 =====
+    contextManagerState,
+
     // ===== Module 1 Actions =====
     setInitPhase,
     setRunMode,
@@ -740,6 +815,15 @@ export const useAppStore = defineStore('app', () => {
     // ===== Module 9 Actions =====
     setGlobalErrorState,
     setAudioChannelState,
+
+    // ===== Module 10 Actions: 大模型调度 =====
+    setLLMModelState,
+
+    // ===== Module 11 Actions: 策略引擎 =====
+    setStrategyEngineState,
+
+    // ===== Module 12 Actions: 上下文管理器 =====
+    setContextManagerState,
 
     // ===== Getters =====
     isFullMode,

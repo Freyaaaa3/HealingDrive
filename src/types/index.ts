@@ -721,6 +721,7 @@ export type ErrorSource =
   | 'healing' | 'music' | 'breath' | 'parking'
   | 'profile' | 'datastore' | 'oem' | 'lifecycle'
   | 'avatar' | 'interaction' | 'global'
+  | 'llm'
 
 /** 单条异常记录 */
 export interface ErrorLogEntry {
@@ -784,6 +785,251 @@ export interface AudioChannelState {
   busySource: string | null
   /** 占用优先级（0=最高） */
   busyPriority: AudioPriority | null
+}
+
+// ==================== 大模型调度类型（Module 10）====================
+
+/** 模型提供商标识 */
+export enum LLMProvider {
+  OLLAMA = 'ollama',
+  OPENAI = 'openai',
+  DEEPSEEK = 'deepseek',
+  DOUBAO = 'doubao',
+  QWEN = 'qwen',
+  MOONSHOT = 'moonshot',
+  ANTHROPIC = 'anthropic',
+}
+
+/** 模型状态 */
+export enum LLMModelStatus {
+  /** 可用 */
+  AVAILABLE = 'available',
+  /** 本地模型加载中 */
+  LOADING = 'loading',
+  /** 使用中 */
+  ACTIVE = 'active',
+  /** 不可用（无API Key / 服务未就绪） */
+  UNAVAILABLE = 'unavailable',
+  /** 模型切换中 */
+  SWITCHING = 'switching',
+}
+
+/** 模型信息 */
+export interface LLMModelInfo {
+  /** 模型唯一ID（如 gpt-4o、deepseek-chat） */
+  id: string
+  /** 显示名称 */
+  name: string
+  /** 提供商 */
+  provider: LLMProvider
+  /** 是否为本地模型 */
+  isLocal: boolean
+  /** 模型状态 */
+  status: LLMModelStatus
+  /** 简要描述 */
+  description: string
+  /** API Key环境变量名（本地模型为空） */
+  envKey: string
+  /** 参数量描述（如 7B、175B） */
+  paramSize?: string
+}
+
+/** 统一对话消息（OpenAI格式兼容） */
+export interface LLMMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+/** 统一对话入参 */
+export interface LLMChatRequest {
+  /** 模型ID */
+  model: string
+  /** 对话上下文 */
+  messages: LLMMessage[]
+  /** 温度参数 (0-1, 默认0.7) */
+  temperature?: number
+  /** 最大生成token数 */
+  maxTokens?: number
+}
+
+/** 统一对话出参 */
+export interface LLMChatResponse {
+  /** 状态码 */
+  code: number
+  /** 生成的回复文本 */
+  content: string
+  /** 实际使用的模型 */
+  model: string
+  /** 是否为本地模型 */
+  isLocal: boolean
+  /** 耗时ms */
+  elapsedMs: number
+  /** 错误信息（失败时） */
+  error?: string
+}
+
+/** 模型切换状态 */
+export interface LLMModelState {
+  /** 当前使用的模型ID */
+  currentModelId: string
+  /** 当前模型状态 */
+  currentStatus: LLMModelStatus
+  /** 所有可用模型列表 */
+  models: LLMModelInfo[]
+  /** Ollama服务是否可用 */
+  ollamaReady: boolean
+  /** 各API Key配置状态（是否已填） */
+  apiKeysConfigured: Record<string, boolean>
+  /** 最近一次请求耗时 */
+  lastRequestMs: number | null
+  /** 最近一次请求时间 */
+  lastRequestTime: number | null
+}
+
+// ==================== 疗愈策略&提示词工程类型（Module 11）====================
+
+/** 驾驶情景信息 */
+export interface DrivingScenarioInfo {
+  /** 情景ID（对应 DrivingScenario 枚举值） */
+  id: string
+  /** 情景名称（如：早高峰拥堵、夜间长途） */
+  name: string
+  /** 情景描述 */
+  description: string
+  /** 是否启用 */
+  enabled: boolean
+}
+
+/** Few-shot 示例对话 */
+export interface FewShotExample {
+  /** 用户输入 */
+  user: string
+  /** 助手回复 */
+  assistant: string
+}
+
+/** 策略规则定义 */
+export interface StrategyRule {
+  /** 策略唯一ID（如 anger_traffic_jam） */
+  id: string
+  /** 情景ID（对应 DrivingScenario） */
+  scenarioId: string
+  /** 情绪类型 */
+  emotionType: EmotionType
+  /** 策略专属系统提示词 */
+  systemPrompt: string
+  /** 策略专属 Few-shot 示例 */
+  fewShots: FewShotExample[]
+  /** 性格适配标签（该策略偏好什么性格的用户） */
+  personalityTags?: string[]
+  /** 是否启用 */
+  enabled: boolean
+  /** 策略描述 */
+  description: string
+}
+
+/** 策略引擎匹配结果 */
+export interface StrategyEngineResult {
+  /** 匹配到的策略规则ID */
+  ruleId: string
+  /** 匹配到的情景ID */
+  scenarioId: string
+  /** 匹配到的情绪类型 */
+  emotionType: EmotionType
+  /** 最终生成的系统提示词 */
+  systemPrompt: string
+  /** 最终注入的 Few-shot 示例 */
+  fewShots: FewShotExample[]
+  /** 匹配原因说明 */
+  matchReason: string
+  /** 是否使用了降级兜底 */
+  isFallback: boolean
+  /** 提示词变量快照（已注入的变量值） */
+  injectedVars: Record<string, string>
+}
+
+/** 提示词构建上下文（PromptManager 输入） */
+export interface PromptBuildContext {
+  /** 当前情绪结果 */
+  emotionResult: EmotionResult | null
+  /** 当前驾驶情景 */
+  scenario: DrivingScenario
+  /** 增强画像 */
+  enhancedProfile: EnhancedDriverProfile | null
+  /** 个性化风格 */
+  personalizedStyle: PersonalizedStyle | null
+  /** 车企话术风格 */
+  oemStyle: OEMHealingStyle
+  /** 对话历史（最近N轮） */
+  conversationHistory: LLMMessage[]
+  /** 当前时间（用于时间感知提示） */
+  currentTime: Date
+  /** 是否为车企模式 */
+  isOEM: boolean
+}
+
+/** 策略引擎状态（供 Store 使用） */
+export interface StrategyEngineState {
+  /** 是否已初始化 */
+  isReady: boolean
+  /** 当前匹配的策略ID */
+  currentRuleId: string | null
+  /** 当前驾驶情景 */
+  currentScenario: string
+  /** 已注册的情景数量 */
+  scenarioCount: number
+  /** 已注册的策略规则数量 */
+  ruleCount: number
+  /** 最近一次匹配耗时(ms) */
+  lastMatchMs: number | null
+  /** 最近一次匹配结果摘要 */
+  lastMatchReason: string | null
+  /** 缓存命中次数 */
+  cacheHitCount: number
+  /** 总匹配次数 */
+  totalMatchCount: number
+}
+
+// ==================== Agent上下文记忆&对话管理类型（Module 12）====================
+
+/** 上下文统计信息 */
+export interface ContextStats {
+  /** 会话ID */
+  sessionId: string | null
+  /** 消息总数 */
+  messageCount: number
+  /** 对话轮次（user+assistant算一轮） */
+  turnCount: number
+  /** 总字符数 */
+  totalChars: number
+  /** 是否已压缩 */
+  hasCompressed: boolean
+  /** 压缩摘要 */
+  compressedSummary: string | null
+  /** 轮次阈值 */
+  maxTurns: number
+  /** 字符阈值 */
+  maxChars: number
+  /** 是否已超过阈值 */
+  isExceeded: boolean
+}
+
+/** ContextManager状态（供 Store 使用） */
+export interface ContextManagerState {
+  /** 是否有活跃会话 */
+  isReady: boolean
+  /** 当前会话ID */
+  sessionId: string | null
+  /** 消息总数 */
+  messageCount: number
+  /** 对话轮次 */
+  turnCount: number
+  /** 总字符数 */
+  totalChars: number
+  /** 是否已压缩 */
+  hasCompressed: boolean
+  /** 最近一次压缩时间 */
+  lastCompressTime: number | null
 }
 
 // ==================== 应用全局状态 ====================

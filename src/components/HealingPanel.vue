@@ -203,27 +203,32 @@ function onLeaveComplete() {
 .panel-glass-bg {
   position: absolute;
   inset: 0;
-  // iOS风格毛玻璃磨砂白
-  background: $color-bg-glass;
-  backdrop-filter: blur($blur-glass);
-  -webkit-backdrop-filter: blur($blur-glass);
+  // 与 AI 对话测试框统一的深色半透明风格
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-radius: inherit;
 
   box-shadow:
-    $shadow-panel,
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.42);
+    0 4px 24px rgba(0, 0, 0, 0.15),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
 }
 
 // ==================== 状态氛围光层（PRD要求）====================
 
 .healing-panel {
-  // 默认待机氛围（浅灰微光）
+  // 默认待机氛围（深色微光）
   &::before {
     content: '';
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: $color-ambient-idle;
+    background: radial-gradient(
+      ellipse at 50% 40%,
+      rgba(123, 158, 200, 0.06) 0%,
+      transparent 60%
+    );
     pointer-events: none;
     z-index: 0;
     transition: background 1.2s ease;
@@ -232,7 +237,11 @@ function onLeaveComplete() {
   // 倾听态：淡蓝微光
   &[class*="listening"]::before,
   &.is-visible::before {
-    background: $color-ambient-listening;
+    background: radial-gradient(
+      ellipse at 50% 40%,
+      rgba(107, 168, 165, 0.08) 0%,
+      transparent 55%
+    );
   }
 }
 
