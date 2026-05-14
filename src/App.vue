@@ -27,8 +27,12 @@
                 <div class="icon-circle"></div>
               </div>
               <p class="ready-title">疗愈Agent 已就绪</p>
-              <p class="wake-hint">说出 "<strong>{{ appStore.oemConfigState.config.wakeWord }}</strong>" 唤醒我</p>
+              <p class="wake-hint">说出 "<strong>{{ appStore.oemConfigState.config.wakeWord }}</strong>" 或点击下方按钮唤醒</p>
               <p class="brand-tagline">{{ appStore.oemConfigState.config.brandTagline }}</p>
+              <button class="start-voice-btn" @click="handleManualStart" :disabled="appStore.isPanelVisible()">
+                <span class="start-voice-icon">🎙️</span>
+                模拟对话开始
+              </button>
             </div>
           </Transition>
 
@@ -53,6 +57,9 @@
                       {{ appStore.agentResponseText }}
                     </p>
                   </Transition>
+                  <button class="end-voice-btn" @click="handleManualStop" :disabled="!appStore.isPanelVisible()">
+                    结束对话
+                  </button>
                 </div>
               </Transition>
 
@@ -91,20 +98,32 @@
               <input
                 v-model="llmInput"
                 type="text"
-                placeholder="输入消息..."
-                :disabled="llmLoading"
+                :placeholder="voiceInputActive ? '正在聆听...' : '输入消息...'"
+                :disabled="llmLoading || voiceInputActive"
                 class="llm-input-field"
               />
               <button
+                type="button"
+                class="llm-mic-btn"
+                :class="{ active: voiceInputActive }"
+                @click="toggleVoiceInput"
+                :disabled="llmLoading || appStore.isPanelVisible()"
+                :title="voiceInputActive ? '停止语音输入' : '语音输入'"
+              >
+                <span class="mic-icon">🎤</span>
+                <span v-if="voiceInputActive" class="mic-pulse"></span>
+              </button>
+              <button
                 type="submit"
                 class="llm-send-btn"
-                :disabled="llmLoading || !llmInput.trim()"
+                :disabled="llmLoading || !llmInput.trim() || voiceInputActive"
               >
                 {{ llmLoading ? '思考中...' : '发送' }}
               </button>
             </form>
 
-            <p class="llm-chat-hint">
+            <p v-if="voiceInputActive" class="llm-voice-hint">聆听中... 说话后将自动发送</p>
+            <p v-else class="llm-chat-hint">
               当前模型: {{ appStore.llmModelState.currentModelId }}
               <span v-if="!appStore.llmModelState.ollamaReady" class="llm-status-offline"> (Ollama未连接)</span>
             </p>
@@ -176,6 +195,66 @@ const llmLoading = ref(false)
 const chatHistory = ref<ChatMessage[]>([])
 const chatMessagesRef = ref<HTMLElement | null>(null)
 
+// ===== LLM 测试语音对话模式 =====
+const voiceInputActive = ref(false)
+
+/** 切换语音/文字输入模式 */
+function toggleVoiceInput() {
+  if (voiceInputActive.value) {
+    stopLLMVoiceListening()
+  } else {
+    startLLMVoiceListening()
+  }
+}
+
+/** 启动LLM测试语音监听（仅面板收起时可用） */
+function startLLMVoiceListening() {
+  if (!asrEngine || appStore.isPanelVisible()) return
+  voiceInputActive.value = true
+  console.log('[App] 🎤 LLM语音对话已启动，等待输入...')
+
+  asrEngine.startListening(
+    (result) => handleLLMVoiceResult(result),
+    (interim) => { llmInput.value = interim },
+    (error) => {
+      console.warn('[App] LLM语音ASR错误:', error)
+      // 出错后自动恢复
+      if (voiceInputActive.value) {
+        setTimeout(() => startLLMVoiceListening(), 1000)
+      }
+    },
+  )
+}
+
+/** 停止LLM测试语音监听 */
+function stopLLMVoiceListening() {
+  voiceInputActive.value = false
+  asrEngine?.stopListening()
+  llmInput.value = ''
+  console.log('[App] 🎤 LLM语音对话已停止')
+}
+
+/** 处理LLM测试语音结果：填入输入框并自动发送 */
+function handleLLMVoiceResult(result: import('@/types').ASRResult) {
+  if (!voiceInputActive.value) return
+  const text = result.text.trim()
+  if (!text) return
+
+  console.log(`[App] LLM语音识别结果: "${text}"`)
+  llmInput.value = text
+  // 停止监听，等待AI回复后重新启动
+  asrEngine?.stopListening()
+  // 自动发送
+  sendLLMMessage()
+}
+
+// 面板可见时自动退出语音模式
+watch(() => appStore.panelVisibility, (vis) => {
+  if (vis !== 'hidden' && voiceInputActive.value) {
+    stopLLMVoiceListening()
+  }
+})
+
 async function sendLLMMessage() {
   const text = llmInput.value.trim()
   if (!text || llmLoading.value || !modelHub) return
@@ -208,6 +287,20 @@ async function sendLLMMessage() {
         content: result.content,
         elapsed: result.elapsedMs,
       })
+
+      // Requirment 1: AI回复后触发TTS语音输出
+      const responseText = result.content
+      if (ttsEngine) {
+        ttsEngine.speak(responseText, undefined, () => {
+          // TTS播报完成 → 若处于语音对话模式则重新开始监听（等音频消散）
+          if (voiceInputActive.value && !appStore.isPanelVisible()) {
+            setTimeout(() => {
+              asrEngine?.stopListening()
+              startLLMVoiceListening()
+            }, 800)
+          }
+        })
+      }
     } else {
       chatHistory.value.push({
         role: 'assistant',
@@ -558,11 +651,32 @@ function setupWakeHandler() {
 }
 
 /**
+ * 手动启动模拟对话（跳过唤醒词）
+ * 点击"模拟对话开始"按钮 → 拉起面板 → 直接进入监听→LLM→TTS→监听循环
+ */
+function handleManualStart() {
+  console.log('[App] 🎙️ 手动启动模拟对话，跳过唤醒词...')
+  handleWakeDetected(true)
+}
+
+/**
+ * 手动结束对话
+ */
+function handleManualStop() {
+  console.log('[App] 🔇 手动结束对话')
+  stopVoiceInteraction()
+  animController?.hide()
+  appStore.hidePanel()
+  autoExitMgr?.stop()
+}
+
+/**
  * 处理唤醒词被检测到
  * 启动完整语音交互流程
+ * @param skipGreeting 是否跳过品牌问候语（手动启动时跳过）
  */
-function handleWakeDetected() {
-  console.log('[App] 🎉 唤醒词检测成功！启动语音交互...')
+function handleWakeDetected(skipGreeting = false) {
+  console.log('[App] 🎉 启动语音交互...' + (skipGreeting ? '(手动模式)' : '(唤醒词模式)'))
 
   // M9: 音频通道被占用时拦截唤醒
   if (audioPriorityMgr && !audioPriorityMgr.canListen()) {
@@ -576,18 +690,22 @@ function handleWakeDetected() {
   // 2. 形象进入待机态
   animController?.show()
   
-  // 3. 启动30s自动退出计时
-  autoExitMgr?.start()
+  // 3. 启动自动退出计时（手动模式不启动，直到用户主动结束）
+  if (!skipGreeting) {
+    autoExitMgr?.start()
+  }
 
-  // 4. M8: 播报品牌问候语（首次唤醒）
-  const oemGreeting = oemConfig?.getConfig().greetingPhrase
-  if (oemGreeting && oemConfig?.isOEMMode()) {
-    ttsEngine?.speak(oemGreeting, undefined, () => {
-      appStore.setAgentResponseText('')
-      appStore.backToIdle()
-    })
-    appStore.startSpeaking(oemGreeting)
-    appStore.setAgentResponseText(oemGreeting)
+  // 4. M8: 播报品牌问候语（仅唤醒词模式，手动启动时跳过）
+  if (!skipGreeting) {
+    const oemGreeting = oemConfig?.getConfig().greetingPhrase
+    if (oemGreeting && oemConfig?.isOEMMode()) {
+      ttsEngine?.speak(oemGreeting, undefined, () => {
+        appStore.setAgentResponseText('')
+        appStore.backToIdle()
+      })
+      appStore.startSpeaking(oemGreeting)
+      appStore.setAgentResponseText(oemGreeting)
+    }
   }
 
   // 5. 启动语音对话系统（Module 3 核心）
@@ -598,8 +716,32 @@ function handleWakeDetected() {
  * 启动语音对话系统
  */
 function startVoiceInteraction(): void {
+  // 防御性初始化：如果引擎未就绪，尝试即时创建（同步部分）
+  if (!asrEngine) {
+    asrEngine = new ASREngine()
+    asrEngine.init()
+    console.warn('[App] ASR引擎延迟初始化')
+  }
+  if (!ttsEngine) {
+    ttsEngine = new TTSEngine()
+    // TTS init 是异步的，这里同步创建实例即可（speak 时内部会自动初始化）
+    console.warn('[App] TTS引擎延迟创建')
+  }
+  if (!voiceInteraction && asrEngine && ttsEngine) {
+    commandHandler = commandHandler || new VoiceCommandHandler()
+    emotionEngine = emotionEngine || new EmotionRecognitionEngine()
+    voiceInteraction = new VoiceInteractionManager(asrEngine, ttsEngine, commandHandler, emotionEngine)
+    // 补充注入
+    if (modelHub) voiceInteraction.setModelHub(modelHub)
+    if (strategyEngine) voiceInteraction.setStrategyEngine(strategyEngine)
+    if (promptManager) voiceInteraction.setPromptManager(promptManager)
+    if (contextManager) voiceInteraction.setContextManager(contextManager)
+    if (healingService) voiceInteraction.setHealingService(healingService)
+    console.warn('[App] VoiceInteractionManager 延迟初始化')
+  }
+
   if (!voiceInteraction || !asrEngine || !ttsEngine) {
-    console.error('[App] 语音引擎未就绪，无法启动对话')
+    console.error('[App] 语音引擎初始化失败，无法启动对话')
     return
   }
 
@@ -963,6 +1105,43 @@ function onPanelLeft() {
     letter-spacing: 0.15em;
     text-transform: uppercase;
   }
+
+  // 模拟对话开始按钮
+  .start-voice-btn {
+    margin-top: 2rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1.8rem;
+    background: rgba(123, 158, 200, 0.12);
+    border: 1px solid rgba(123, 158, 200, 0.22);
+    border-radius: $radius-button;
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.85rem;
+    font-weight: $font-weight-medium;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    letter-spacing: 0.02em;
+
+    .start-voice-icon {
+      font-size: 1rem;
+    }
+
+    &:hover:not(:disabled) {
+      background: rgba(123, 158, 200, 0.22);
+      border-color: rgba(123, 158, 200, 0.35);
+      transform: translateY(-1px);
+    }
+
+    &:active:not(:disabled) {
+      transform: scale(0.97);
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+  }
 }
 
 // ==================== 就绪区域（含LLM对话）====================
@@ -1056,6 +1235,35 @@ function onPanelLeft() {
   max-width: 85%;
   background: rgba(255, 255, 255, 0.35);
   border-radius: $radius-card;
+}
+
+// 结束对话按钮
+.end-voice-btn {
+  margin-top: 1.2rem;
+  padding: 0.45rem 1.2rem;
+  background: rgba(220, 80, 80, 0.12);
+  border: 1px solid rgba(220, 80, 80, 0.2);
+  border-radius: $radius-button;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.72rem;
+  font-weight: $font-weight-medium;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover:not(:disabled) {
+    background: rgba(220, 80, 80, 0.22);
+    border-color: rgba(220, 80, 80, 0.35);
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  &:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
 }
 
 // 面板不可见时：对话消息列表
@@ -1247,6 +1455,64 @@ function onPanelLeft() {
   }
 }
 
+// 麦克风按钮
+.llm-mic-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: $radius-button;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+
+  .mic-icon {
+    font-size: 1rem;
+    line-height: 1;
+    position: relative;
+    z-index: 1;
+  }
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  &.active {
+    background: rgba(76, 175, 80, 0.14);
+    border-color: rgba(76, 175, 80, 0.28);
+
+    .mic-pulse {
+      position: absolute;
+      inset: -2px;
+      border-radius: inherit;
+      border: 2px solid rgba(76, 175, 80, 0.35);
+      animation: mic-pulse 1.5s ease-in-out infinite;
+    }
+  }
+
+  &:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+}
+
+// 语音模式提示文字
+.llm-voice-hint {
+  font-size: 0.65rem;
+  color: rgba(76, 175, 80, 0.7);
+  margin: 0;
+  padding: 0.25rem 1rem 0.4rem;
+  text-align: center;
+  letter-spacing: 0.02em;
+  animation: voice-hint-pulse 1.5s ease-in-out infinite;
+}
+
 .llm-chat-hint {
   font-size: 0.65rem;
   color: rgba(255, 255, 255, 0.2);
@@ -1265,6 +1531,16 @@ function onPanelLeft() {
 @keyframes pulse-animation {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.55; transform: scale(0.85); }
+}
+
+@keyframes mic-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50% { opacity: 0.15; transform: scale(1.2); }
+}
+
+@keyframes voice-hint-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
 
 @keyframes fade-up {

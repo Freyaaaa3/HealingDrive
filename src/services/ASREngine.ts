@@ -10,6 +10,7 @@ export class ASREngine {
   private recognition: any = null          // SpeechRecognition实例
   private status: ASRStatus = ASRStatus.IDLE
   private isListeningForInput: boolean = false
+  private isManualStop: boolean = false    // 主动停止标志（抑制aborted错误）
 
   /** 最终结果回调 */
   private onFinalResultCallback: ((result: ASRResult) => void) | null = null
@@ -103,6 +104,14 @@ export class ASREngine {
    * 处理错误
    */
   private handleError(error: string): void {
+    // 主动停止产生的 aborted/no-speech 不做错误处理
+    if (this.isManualStop) {
+      if (error === 'aborted') {
+        console.log('[ASREngine] 已主动停止')
+        return
+      }
+    }
+
     switch (error) {
       case 'no-speech':
         // 无语音，正常情况，不报错
@@ -147,6 +156,7 @@ export class ASREngine {
     this.onStatusChangeCallback = onStatusChange || null
 
     this.isListeningForInput = true
+    this.isManualStop = false
     this.setStatus(ASRStatus.LISTENING)
 
     try {
@@ -174,6 +184,7 @@ export class ASREngine {
     if (!this.isListeningForInput) return
 
     this.isListeningForInput = false
+    this.isManualStop = true
     this.setStatus(ASRStatus.IDLE)
 
     try {

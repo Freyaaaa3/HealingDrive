@@ -291,6 +291,9 @@ export class VoiceInteractionManager {
 
     console.log(`[VoiceInteraction] 收到用户输入: "${text}"`)
 
+    // 立即停止ASR，防止TTS声音被回采识别
+    this.asrEngine.stopListening()
+
     // M12: 初始化上下文（如果未初始化）
     if (this.contextManager && !this.contextManager.hasActiveSession()) {
       this.contextManager.initSession()
@@ -431,12 +434,12 @@ export class VoiceInteractionManager {
           // 播报完成 → 恢复监听
           this.callbacks.onResponseComplete?.()
           
-          // 延迟一点再恢复倾听，让用户感知到"轮到自己说"
+          // 延迟800ms再恢复倾听：等TTS音频完全消散，防止回采
           setTimeout(() => {
             if (this.isRunning) {
               this.resumeListeningAfterResponse()
             }
-          }, 300)
+          }, 800)
         },
         (status) => this.callbacks.onTtsStatusChange?.(status),
       )
