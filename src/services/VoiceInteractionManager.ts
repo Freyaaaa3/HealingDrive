@@ -420,6 +420,11 @@ export class VoiceInteractionManager {
       // 添加Agent回复到历史
       this.addMessage('agent', responseText)
 
+      // M12: 确保助手回复同步到 ContextManager（降级路径不会在 generateLLMResponse 中添加）
+      if (this.contextManager && this.contextManager.hasActiveSession() && !this.modelHub) {
+        this.contextManager.addAssistantMessage(responseText)
+      }
+
       // 进入回复阶段
       this.setPhase(ConversationPhase.RESPONDING)
       

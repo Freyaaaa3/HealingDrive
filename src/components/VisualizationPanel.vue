@@ -526,7 +526,7 @@ $viz-z: 9998;
 
 .viz-panel-wrap {
   flex: 1;
-  min-width: 0;
+  min-width: 460px;
   overflow: hidden;
   opacity: 1;
   transition: opacity 0.25s ease, min-width 0.4s cubic-bezier(0.22, 1, 0.36, 1);

@@ -10,7 +10,7 @@
  */
 
 import type { LLMMessage, ContextStats, ContextManagerState } from '@/types'
-import { CONTEXT_MAX_TURNS, CONTEXT_MAX_CHARS, CONTEXT_COMPRESS_PROMPT } from '@/config/constants'
+import { CONTEXT_MAX_TURNS, CONTEXT_MAX_CHARS, CONTEXT_COMPRESS_PROMPT, CONTEXT_PRESERVE_RECENT_TURNS, CONTEXT_COMPRESS_MAX_LENGTH } from '@/config/constants'
 import { ErrorSeverity, ErrorSource } from '@/types'
 
 /**
@@ -31,6 +31,9 @@ export class ContextManager {
 
   /** 是否已压缩过 */
   private hasCompressed: boolean = false
+
+  /** 最近一次压缩时间戳 */
+  private lastCompressTime: number | null = null
 
   /** 轮次计数（每轮=user+assistant） */
   private turnCount: number = 0
@@ -96,6 +99,7 @@ export class ContextManager {
     this.messages = []
     this.compressedSummary = null
     this.hasCompressed = false
+    this.lastCompressTime = null
     this.turnCount = 0
     this.totalChars = 0
 
@@ -296,9 +300,10 @@ export class ContextManager {
       // 保存压缩摘要
       this.compressedSummary = summary
       this.hasCompressed = true
+      this.lastCompressTime = Date.now()
 
-      // 保留最近3轮对话，清空更早的
-      const recentMessages = this.messages.slice(-6) // 最近3轮=user3+assistant3
+      // 保留最近N轮对话，清空更早的
+      const recentMessages = this.messages.slice(-(CONTEXT_PRESERVE_RECENT_TURNS * 2)) // N轮 = N*user + N*assistant
       this.messages = recentMessages
 
       // 重新计算字符数
@@ -421,7 +426,7 @@ export class ContextManager {
       turnCount: this.turnCount,
       totalChars: this.totalChars,
       hasCompressed: this.hasCompressed,
-      lastCompressTime: null, // TODO: 记录上次压缩时间
+      lastCompressTime: this.lastCompressTime,
     }
   }
 

@@ -10,6 +10,7 @@ export class WakeListener {
   private status: WakeStatus = WakeStatus.INACTIVE
   private recognition: any = null       // SpeechRecognition实例
   private isListening: boolean = false
+  private isManualStop: boolean = false  // 主动停止标志（抑制aborted错误和onend重启）
   private restartTimer: ReturnType<typeof setTimeout> | null = null
   private onWakeDetectedCallback: (() => void) | null = null
 
@@ -52,12 +53,22 @@ export class WakeListener {
 
     // 错误处理
     this.recognition.onerror = (event: any) => {
+      // 主动停止产生的 aborted 不做错误处理
+      if (this.isManualStop && event.error === 'aborted') {
+        console.log('[WakeListener] 已主动停止')
+        return
+      }
       console.error('[WakeListener] 语音识别错误:', event.error)
       this.handleError(event.error)
     }
 
     // 监听结束（可能被意外停止）
     this.recognition.onend = () => {
+      if (this.isManualStop) {
+        // 主动停止，不重启
+        this.isManualStop = false
+        return
+      }
       if (this.isListening && this.status !== WakeStatus.ERROR) {
         console.log('[WakeListener] 监听意外停止，准备重启...')
         this.scheduleRestart()
@@ -137,9 +148,12 @@ export class WakeListener {
 
     console.log('[WakeListener] 暂停监听')
     this.isListening = false
+    this.isManualStop = true    // 标记主动停止，抑制onend重启
+    this.cancelRestartTimer()    // 取消可能存在的重启定时器
     try {
       this.recognition?.stop()
     } catch (error) {
+      this.isManualStop = false
       console.warn('[WakeListener] 暂停监听异常:', error)
     }
     this.status = WakeStatus.INACTIVE
@@ -162,6 +176,7 @@ export class WakeListener {
     console.log('[WakeListener] 停止监听服务')
     
     this.isListening = false
+    this.isManualStop = true
     this.cancelRestartTimer()
     
     try {

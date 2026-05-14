@@ -3,7 +3,7 @@
  * 负责车辆上电自启动、座舱休眠暂停、下电销毁等整车生命周期管理
  * 以及系统资源不足时的延迟启动逻辑
  */
-import { InitPhase, RunMode, AppState } from '@/types'
+import { InitPhase, RunMode, AppState, ConversationPhase } from '@/types'
 import { INIT_DELAY_ON_LOW_RESOURCE } from '@/config/constants'
 import { PermissionManager } from './PermissionManager'
 import { ResourceLoader } from './ResourceLoader'
@@ -178,6 +178,12 @@ export class LifecycleManager {
    */
   private handleCabinWakeUp(): void {
     console.log('[LifecycleManager] 座舱唤醒，恢复待命状态')
+    // 如果 VoiceInteraction 正在活跃（对话阶段非IDLE），不恢复唤醒词监听
+    // 避免 WakeListener 与 ASREngine 抢占麦克风
+    if (this.store.conversationPhase !== ConversationPhase.IDLE) {
+      console.log('[LifecycleManager] 对话系统活跃中，跳过唤醒词监听恢复')
+      return
+    }
     this.wakeListener.resume()
     this.store.setWakeStatus(this.wakeListener.getStatus())
   }

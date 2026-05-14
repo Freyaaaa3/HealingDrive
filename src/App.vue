@@ -17,116 +17,124 @@
         </div>
 
         <!-- ===== 已就绪但未唤醒：待命提示 + LLM对话测试 ===== -->
-        <div v-else class="ready-area">
-          <Transition name="fade">
-            <div
-              class="ready-notice"
-              v-if="!appStore.isPanelVisible()"
-            >
-              <div class="ready-icon">
-                <div class="icon-circle"></div>
+        <div v-else class="ready-area" >
+          <div class="chat-section-wrap" >
+            <Transition name="fade">
+              <div
+                class="ready-notice"
+                v-if="!appStore.isPanelVisible()"
+              >
+                <div class="ready-icon">
+                  <div class="icon-circle"></div>
+                </div>
+                <p class="ready-title">疗愈Agent 已就绪</p>
+                <p class="wake-hint">说出 "<strong>{{ appStore.oemConfigState.config.wakeWord }}</strong>" 或点击下方按钮唤醒</p>
+                <p class="brand-tagline">{{ appStore.oemConfigState.config.brandTagline }}</p>
+                <button class="start-voice-btn" @click="handleManualStart" :disabled="appStore.isPanelVisible()">
+                  <svg class="start-voice-wave" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                  模拟对话开始
+                </button>
               </div>
-              <p class="ready-title">疗愈Agent 已就绪</p>
-              <p class="wake-hint">说出 "<strong>{{ appStore.oemConfigState.config.wakeWord }}</strong>" 或点击下方按钮唤醒</p>
-              <p class="brand-tagline">{{ appStore.oemConfigState.config.brandTagline }}</p>
-              <button class="start-voice-btn" @click="handleManualStart" :disabled="appStore.isPanelVisible()">
-                <span class="start-voice-icon">🎙️</span>
-                模拟对话开始
-              </button>
-            </div>
-          </Transition>
+            </Transition>
 
-          <!-- ===== 主功能：测试大模型对话 ===== -->
-          <div class="llm-chat-section">
-            <div class="llm-chat-header">
-              <span class="llm-chat-title">AI 对话测试</span>
-              <span class="llm-model-badge" :class="{ online: appStore.llmModelState.ollamaReady }">
-                {{ appStore.llmModelState.currentModelId }}
-              </span>
-            </div>
+            <!-- ===== 主功能：测试大模型对话 ===== -->
+            
+              <div class="llm-chat-section">
+                <div class="llm-chat-header">
+                <span class="llm-chat-title">AI 对话测试</span>
+                <span class="llm-model-badge" :class="{ online: appStore.llmModelState.ollamaReady }">
+                  {{ appStore.llmModelState.currentModelId }}
+                </span>
+              </div>
 
-            <!-- ===== 形象展示区（面板拉起时显示形象，收起时显示对话） ===== -->
-            <div class="llm-chat-stage">
-              <!-- 面板可见：显示虚拟形象 -->
-              <Transition name="stage-crossfade">
-                <div v-if="appStore.isPanelVisible()" class="llm-stage-avatar">
-                  <AvatarDisplay :state="appStore.avatarAnimState" />
-                  <!-- Agent 回复文本叠在形象下方 -->
-                  <Transition name="text-fade" mode="out-in">
-                    <p v-if="appStore.agentResponseText" class="llm-stage-response">
-                      {{ appStore.agentResponseText }}
-                    </p>
-                  </Transition>
-                  <button class="end-voice-btn" @click="handleManualStop" :disabled="!appStore.isPanelVisible()">
-                    结束对话
-                  </button>
-                </div>
-              </Transition>
-
-              <!-- 面板不可见：显示对话消息列表 -->
-              <Transition name="stage-crossfade">
-                <div v-if="!appStore.isPanelVisible()" class="llm-chat-messages" ref="chatMessagesRef">
-                  <div v-if="chatHistory.length === 0" class="llm-chat-empty">
-                    <p>输入消息，测试大模型对话能力</p>
+              <!-- ===== 形象展示区（面板拉起时显示形象，收起时显示对话） ===== -->
+              <div class="llm-chat-stage">
+                <!-- 面板可见：显示虚拟形象 -->
+                <Transition name="stage-crossfade">
+                  <div v-if="appStore.isPanelVisible()" class="llm-stage-avatar">
+                    <AvatarDisplay :state="appStore.avatarAnimState" />
+                    <!-- Agent 回复文本叠在形象下方 -->
+                    <Transition name="text-fade" mode="out-in">
+                      <p v-if="appStore.agentResponseText" class="llm-stage-response">
+                        {{ appStore.agentResponseText }}
+                      </p>
+                    </Transition>
+                    <button class="end-voice-btn" @click="handleManualStop" :disabled="!appStore.isPanelVisible()">
+                      结束对话
+                    </button>
                   </div>
-                  <div
-                    v-for="(msg, idx) in chatHistory"
-                    :key="idx"
-                    class="llm-msg"
-                    :class="msg.role"
-                  >
-                    <span class="llm-msg-role">{{ msg.role === 'user' ? '你' : 'AI' }}</span>
-                    <div class="llm-msg-bubble">
-                      <p>{{ msg.content }}</p>
-                      <span v-if="msg.elapsed" class="llm-msg-time">{{ msg.elapsed }}ms</span>
+                </Transition>
+
+                <!-- 面板不可见：显示对话消息列表 -->
+                <Transition name="stage-crossfade">
+                  <div v-if="!appStore.isPanelVisible()" class="llm-chat-messages" ref="chatMessagesRef">
+                    <div v-if="chatHistory.length === 0" class="llm-chat-empty">
+                      <p>输入消息，测试大模型对话能力</p>
+                    </div>
+                    <div
+                      v-for="(msg, idx) in chatHistory"
+                      :key="idx"
+                      class="llm-msg"
+                      :class="msg.role"
+                    >
+                      <span class="llm-msg-role">{{ msg.role === 'user' ? '你' : 'AI' }}</span>
+                      <div class="llm-msg-bubble">
+                        <p>{{ msg.content }}</p>
+                        <span v-if="msg.elapsed" class="llm-msg-time">{{ msg.elapsed }}ms</span>
+                      </div>
+                    </div>
+                    <div v-if="llmLoading" class="llm-msg ai">
+                      <span class="llm-msg-role">AI</span>
+                      <div class="llm-msg-bubble typing">
+                        <span class="typing-dot"></span>
+                        <span class="typing-dot"></span>
+                        <span class="typing-dot"></span>
+                      </div>
                     </div>
                   </div>
-                  <div v-if="llmLoading" class="llm-msg ai">
-                    <span class="llm-msg-role">AI</span>
-                    <div class="llm-msg-bubble typing">
-                      <span class="typing-dot"></span>
-                      <span class="typing-dot"></span>
-                      <span class="typing-dot"></span>
-                    </div>
-                  </div>
-                </div>
-              </Transition>
+                </Transition>
+              </div>
+
+              <!-- 输入区 -->
+              <form class="llm-chat-input" @submit.prevent="sendLLMMessage">
+                <input
+                  v-model="llmInput"
+                  type="text"
+                  :placeholder="voiceInputActive ? '正在聆听...' : '输入消息...'"
+                  :disabled="llmLoading || voiceInputActive"
+                  class="llm-input-field"
+                />
+                <button
+                  type="button"
+                  class="llm-mic-btn"
+                  :class="{ active: voiceInputActive }"
+                  @click="toggleVoiceInput"
+                  :disabled="llmLoading || appStore.isPanelVisible()"
+                  :title="voiceInputActive ? '停止语音输入' : '语音输入'"
+                >
+                  <span class="mic-icon">🎤</span>
+                  <span v-if="voiceInputActive" class="mic-pulse"></span>
+                </button>
+                <button
+                  type="submit"
+                  class="llm-send-btn"
+                  :disabled="llmLoading || !llmInput.trim() || voiceInputActive"
+                >
+                  {{ llmLoading ? '思考中...' : '发送' }}
+                </button>
+              </form>
+
+              <p v-if="voiceInputActive" class="llm-voice-hint">聆听中... 说话后将自动发送</p>
+              <p v-else class="llm-chat-hint">
+                当前模型: {{ appStore.llmModelState.currentModelId }}
+                <span v-if="!appStore.llmModelState.ollamaReady" class="llm-status-offline"> (Ollama未连接)</span>
+              </p>
             </div>
-
-            <!-- 输入区 -->
-            <form class="llm-chat-input" @submit.prevent="sendLLMMessage">
-              <input
-                v-model="llmInput"
-                type="text"
-                :placeholder="voiceInputActive ? '正在聆听...' : '输入消息...'"
-                :disabled="llmLoading || voiceInputActive"
-                class="llm-input-field"
-              />
-              <button
-                type="button"
-                class="llm-mic-btn"
-                :class="{ active: voiceInputActive }"
-                @click="toggleVoiceInput"
-                :disabled="llmLoading || appStore.isPanelVisible()"
-                :title="voiceInputActive ? '停止语音输入' : '语音输入'"
-              >
-                <span class="mic-icon">🎤</span>
-                <span v-if="voiceInputActive" class="mic-pulse"></span>
-              </button>
-              <button
-                type="submit"
-                class="llm-send-btn"
-                :disabled="llmLoading || !llmInput.trim() || voiceInputActive"
-              >
-                {{ llmLoading ? '思考中...' : '发送' }}
-              </button>
-            </form>
-
-            <p v-if="voiceInputActive" class="llm-voice-hint">聆听中... 说话后将自动发送</p>
-            <p v-else class="llm-chat-hint">
-              当前模型: {{ appStore.llmModelState.currentModelId }}
-              <span v-if="!appStore.llmModelState.ollamaReady" class="llm-status-offline"> (Ollama未连接)</span>
-            </p>
           </div>
         </div>
       </div>
@@ -411,6 +419,10 @@ onMounted(async () => {
 
   // --- Module 12: 初始化上下文管理器 ---
   contextManager = new ContextManager()
+  // 注册状态变更回调，将 ContextManager 状态实时同步到 appStore
+  contextManager.onChange((state) => {
+    appStore.setContextManagerState(state)
+  })
   console.log('[App] M12 上下文管理器初始化完成')
 
   // --- Module 1: 基础初始化 ---
@@ -745,6 +757,9 @@ function startVoiceInteraction(): void {
     return
   }
 
+  // 暂停唤醒词监听（避免两个 SpeechRecognition 实例抢占麦克风）
+  lifecycleManager?.getWakeListener()?.pause()
+
   const started = voiceInteraction.start({
     // 用户开始说话 → 形象进入倾听态
     onUserSpeaking: () => {
@@ -911,6 +926,10 @@ function stopVoiceInteraction(): void {
   appStore.setConversationPhase(ConversationPhase.IDLE)
   appStore.setAsrStatus('idle' as any)
   appStore.setTtsStatus('idle' as any)
+
+  // 恢复唤醒词监听
+  lifecycleManager?.getWakeListener()?.resume()
+
   console.log('[App] 语音对话已停止')
 }
 
@@ -935,24 +954,26 @@ function onPanelLeft() {
 .app-container {
   width: 100vw;
   height: 100vh;
-  // 通透座舱环境背景：深邃但不厚重，模拟真实座舱夜间氛围
+  // 通透座舱环境背景：更透亮、白色+雾霾蓝微妙渐变
   background:
-    radial-gradient(ellipse 80% 60% at 50% 40%, rgba(123, 158, 200, 0.04) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 50% at 30% 70%, rgba(107, 168, 165, 0.03) 0%, transparent 50%),
-    linear-gradient(180deg, $color-cabin-bg-dark 0%, $color-cabin-bg-mid 50%, $color-cabin-bg-dark 100%);
+    radial-gradient(ellipse 90% 70% at 50% 38%, rgba(255, 255, 255, 0.08) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 60% at 35% 65%, rgba(123, 158, 200, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 50% at 65% 30%, rgba(167, 147, 193, 0.025) 0%, transparent 50%),
+    linear-gradient(180deg, #cdd5e8 0%, #e4e8f2 35%, #eaedf5 65%, #cdd5e8 100%);
   color: $color-text-primary;
   font-family: $font-family-base;
   overflow: hidden;
   position: relative;
 
-  // 全局极微妙的动态氛围层（不干扰驾驶）
+  // 全局极微妙的动态氛围层（更柔和）
   &::before {
     content: '';
     position: absolute;
     inset: 0;
     background: radial-gradient(
-      circle at 50% 45%,
-      $color-cabin-ambient-glow 0%,
+      circle at 50% 42%,
+      rgba(123, 158, 200, 0.04) 0%,
+      rgba(167, 147, 193, 0.02) 30%,
       transparent 55%
     );
     animation: ambient-breathe 8s ease-in-out infinite alternate;
@@ -967,9 +988,14 @@ function onPanelLeft() {
     z-index: 1;
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(260px, min(92vw, 520px)) minmax(0, 1fr);
-    align-items: center;
+    align-items: stretch;
     justify-items: stretch;
     box-sizing: border-box;
+    // 底部灰白色底图（全局背景）
+    background: rgba(245, 240, 245, 0.4);
+    border-radius: 28px;
+    box-shadow: 0 4px 32px rgba(0, 0, 0, 0.06);
+
   }
 
   .stage-gutter {
@@ -1034,18 +1060,28 @@ function onPanelLeft() {
 .ready-notice {
   text-align: center;
   animation: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1);
-
+  padding:25px;
   .ready-icon {
     margin-bottom: 2rem;
 
     .icon-circle {
-      width: 88px;
-      height: 88px;
+      width: 96px;
+      height: 96px;
       margin: 0 auto;
       border-radius: 50%;
-      // 多层光晕营造通透呼吸感
+      // 微妙蓝紫白渐变球
       background:
-        radial-gradient(circle at 50% 50%, #7B9EC820 0%, transparent 65%);
+        radial-gradient(circle at 35% 35%,
+          rgba(255, 255, 255, 0.5) 0%,
+          rgba(167, 147, 193, 0.2) 30%,
+          rgba(123, 158, 200, 0.25) 55%,
+          rgba(180, 205, 229, 0.12) 75%,
+          transparent 100%
+        );
+      box-shadow:
+        0 0 40px rgba(123, 158, 200, 0.12),
+        0 0 80px rgba(167, 147, 193, 0.06),
+        inset 0 -8px 20px rgba(123, 158, 200, 0.08);
       position: relative;
       animation: ready-glow 3s ease-in-out infinite alternate;
 
@@ -1053,9 +1089,15 @@ function onPanelLeft() {
       &::before {
         content: '';
         position: absolute;
-        inset: 18px;
+        inset: 16px;
         border-radius: 50%;
-        background: #7B9EC830;
+        background: radial-gradient(
+          circle at 40% 38%,
+          rgba(255, 255, 255, 0.35) 0%,
+          rgba(180, 205, 229, 0.2) 40%,
+          rgba(167, 147, 193, 0.15) 70%,
+          rgba(123, 158, 200, 0.1) 100%
+        );
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
       }
@@ -1064,12 +1106,15 @@ function onPanelLeft() {
       &::after {
         content: '';
         position: absolute;
-        inset: 32px;
+        top: 18%;
+        left: 22%;
+        width: 28%;
+        height: 20%;
         border-radius: 50%;
         background: radial-gradient(
           circle,
-          rgba(255, 255, 255, 0.25) 0%,
-          rgba(180, 205, 229, 0.15) 60%,
+          rgba(255, 255, 255, 0.45) 0%,
+          rgba(255, 255, 255, 0.1) 50%,
           transparent 100%
         );
       }
@@ -1079,7 +1124,7 @@ function onPanelLeft() {
   .ready-title {
     font-size: $font-size-title;
     font-weight: $font-weight-medium;
-    color: rgba(255, 255, 255, 0.90);
+    color: #1a1a2e;
     margin: 0 0 0.75rem;
     letter-spacing: 0.06em;
   }
@@ -1087,12 +1132,12 @@ function onPanelLeft() {
   .wake-hint {
     font-size: $font-size-hint;
     font-weight: $font-weight-normal;
-    color: rgba(255, 255, 255, 0.40);
+    color: rgba(50, 50, 70, 0.55);
     margin: 0;
     letter-spacing: 0.03em;
     
     strong {
-      color: $color-primary-light;
+      color: #5a7fa8;
       font-weight: $font-weight-medium;
     }
   }
@@ -1101,45 +1146,54 @@ function onPanelLeft() {
   .brand-tagline {
     margin-top: 2.5rem;
     font-size: 0.72rem;
-    color: rgba(255, 255, 255, 0.22);
+    color: rgba(60, 60, 80, 0.3);
     letter-spacing: 0.15em;
     text-transform: uppercase;
   }
 
-  // 模拟对话开始按钮
+  // 模拟对话开始按钮 — 专业级UI
   .start-voice-btn {
     margin-top: 2rem;
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.7rem 1.8rem;
-    background: rgba(123, 158, 200, 0.12);
-    border: 1px solid rgba(123, 158, 200, 0.22);
-    border-radius: $radius-button;
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 0.85rem;
+    gap: 0.55rem;
+    padding: 0.75rem 2rem;
+    background: #589eee;
+    border: none;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 0.88rem;
     font-weight: $font-weight-medium;
     cursor: pointer;
     transition: all 0.25s ease;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.04em;
+    box-shadow:
+      0 2px 12px rgba(90, 127, 168, 0.3),
+      0 1px 3px rgba(0, 0, 0, 0.08);
 
-    .start-voice-icon {
-      font-size: 1rem;
+    .start-voice-wave {
+      flex-shrink: 0;
+      opacity: 0.9;
     }
 
     &:hover:not(:disabled) {
-      background: rgba(123, 158, 200, 0.22);
-      border-color: rgba(123, 158, 200, 0.35);
+      background: #4a6f98;
       transform: translateY(-1px);
+      box-shadow:
+        0 4px 18px rgba(90, 127, 168, 0.35),
+        0 2px 4px rgba(0, 0, 0, 0.1);
     }
 
     &:active:not(:disabled) {
-      transform: scale(0.97);
+      transform: scale(0.97) translateY(0);
+      box-shadow:
+        0 1px 6px rgba(90, 127, 168, 0.25);
     }
 
     &:disabled {
-      opacity: 0.35;
+      opacity: 0.4;
       cursor: not-allowed;
+      box-shadow: none;
     }
   }
 }
@@ -1147,11 +1201,39 @@ function onPanelLeft() {
 // ==================== 就绪区域（含LLM对话）====================
 
 .ready-area {
-  width: 100%;
+  width: 140%;
+  height: 200%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2rem;
+  justify-content: center;
+  gap: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;;
+}
+
+// 疗愈Agent测试板块外层包裹：90%高度 + 透亮底图
+.chat-section-wrap {
+  width: 90%;
+  height: 120%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-image: url('@/assets/image4.png');
+  background-repeat: no-repeat;      /* 是否重复平铺 */
+  background-size: cover;            /* 覆盖整个区域（可能裁剪） */
+  background-position: center;       /* 图片位置：居中 */
+  // 比灰白底图更透亮的背景
+  //background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 // ==================== LLM 对话测试（主功能）====================
@@ -1159,15 +1241,15 @@ function onPanelLeft() {
 .llm-chat-section {
   width: 100%;
   max-width: 520px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: $radius-panel;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   overflow: hidden;
   box-shadow:
-    0 4px 24px rgba(0, 0, 0, 0.15),
-    inset 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+    0 4px 24px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .llm-chat-header {
@@ -1175,28 +1257,28 @@ function onPanelLeft() {
   align-items: center;
   justify-content: space-between;
   padding: 0.8rem 1.2rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .llm-chat-title {
   font-size: 0.82rem;
   font-weight: $font-weight-medium;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(30, 30, 50, 0.65);
   letter-spacing: 0.04em;
 }
 
 .llm-model-badge {
   font-size: 0.68rem;
   font-weight: $font-weight-normal;
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(0, 0, 0, 0.3);
   padding: 0.15rem 0.6rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.04);
 
   &.online {
-    color: rgba(76, 175, 80, 0.85);
-    border-color: rgba(76, 175, 80, 0.2);
+    color: rgba(56, 142, 60, 0.85);
+    border-color: rgba(76, 175, 80, 0.18);
     background: rgba(76, 175, 80, 0.06);
   }
 }
@@ -1227,13 +1309,13 @@ function onPanelLeft() {
 .llm-stage-response {
   font-size: 0.8rem;
   font-weight: $font-weight-medium;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(30, 30, 50, 0.8);
   margin: 0;
   padding: 0.5rem 1.2rem;
   text-align: center;
   line-height: 1.6;
   max-width: 85%;
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.4);
   border-radius: $radius-card;
 }
 
@@ -1241,19 +1323,19 @@ function onPanelLeft() {
 .end-voice-btn {
   margin-top: 1.2rem;
   padding: 0.45rem 1.2rem;
-  background: rgba(220, 80, 80, 0.12);
-  border: 1px solid rgba(220, 80, 80, 0.2);
+  background: rgba(180, 60, 60, 0.08);
+  border: 1px solid rgba(180, 60, 60, 0.12);
   border-radius: $radius-button;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(30, 30, 50, 0.5);
   font-size: 0.72rem;
   font-weight: $font-weight-medium;
   cursor: pointer;
   transition: all 0.2s ease;
 
   &:hover:not(:disabled) {
-    background: rgba(220, 80, 80, 0.22);
-    border-color: rgba(220, 80, 80, 0.35);
-    color: rgba(255, 255, 255, 0.85);
+    background: rgba(180, 60, 60, 0.14);
+    border-color: rgba(180, 60, 60, 0.2);
+    color: rgba(180, 60, 60, 0.7);
   }
 
   &:active:not(:disabled) {
@@ -1282,7 +1364,7 @@ function onPanelLeft() {
     background: transparent;
   }
   &::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(0, 0, 0, 0.08);
     border-radius: 2px;
   }
 }
@@ -1294,7 +1376,7 @@ function onPanelLeft() {
   justify-content: center;
 
   p {
-    color: rgba(255, 255, 255, 0.2);
+    color: rgba(0, 0, 0, 0.2);
     font-size: 0.78rem;
     margin: 0;
     letter-spacing: 0.02em;
@@ -1325,13 +1407,13 @@ function onPanelLeft() {
   }
 
   &.user .llm-msg-role {
-    background: rgba(123, 158, 200, 0.2);
-    color: rgba(123, 158, 200, 0.85);
+    background: rgba(123, 158, 200, 0.14);
+    color: rgba(123, 158, 200, 0.8);
   }
 
   &.ai .llm-msg-role {
-    background: rgba(107, 168, 165, 0.2);
-    color: rgba(107, 168, 165, 0.85);
+    background: rgba(107, 168, 165, 0.14);
+    color: rgba(107, 168, 165, 0.8);
   }
 
   .llm-msg-bubble {
@@ -1344,20 +1426,20 @@ function onPanelLeft() {
       margin: 0;
       font-size: 0.8rem;
       line-height: 1.55;
-      color: rgba(255, 255, 255, 0.85);
+      color: rgba(30, 30, 50, 0.82);
       word-break: break-word;
     }
   }
 
   &.user .llm-msg-bubble {
-    background: rgba(123, 158, 200, 0.15);
-    border: 1px solid rgba(123, 158, 200, 0.1);
+    background: rgba(123, 158, 200, 0.1);
+    border: 1px solid rgba(123, 158, 200, 0.07);
     border-top-right-radius: 4px;
   }
 
   &.ai .llm-msg-bubble {
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.04);
     border-top-left-radius: 4px;
   }
 
@@ -1399,27 +1481,27 @@ function onPanelLeft() {
   display: flex;
   gap: 0.5rem;
   padding: 0.7rem 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .llm-input-field {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: $radius-button;
   padding: 0.5rem 0.8rem;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(30, 30, 50, 0.9);
   font-size: 0.8rem;
   outline: none;
   transition: border-color 0.2s ease, background 0.2s ease;
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.2);
+    color: rgba(0, 0, 0, 0.2);
   }
 
   &:focus {
-    border-color: rgba(123, 158, 200, 0.3);
-    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(123, 158, 200, 0.28);
+    background: rgba(0, 0, 0, 0.04);
   }
 
   &:disabled {
@@ -1430,10 +1512,10 @@ function onPanelLeft() {
 .llm-send-btn {
   flex-shrink: 0;
   padding: 0.5rem 1.2rem;
-  background: rgba(123, 158, 200, 0.2);
-  border: 1px solid rgba(123, 158, 200, 0.15);
+  background: rgba(123, 158, 200, 0.12);
+  border: 1px solid rgba(123, 158, 200, 0.1);
   border-radius: $radius-button;
-  color: rgba(255, 255, 255, 0.8);
+  color: rgba(30, 30, 50, 0.7);
   font-size: 0.78rem;
   font-weight: $font-weight-medium;
   cursor: pointer;
@@ -1441,8 +1523,8 @@ function onPanelLeft() {
   white-space: nowrap;
 
   &:hover:not(:disabled) {
-    background: rgba(123, 158, 200, 0.3);
-    border-color: rgba(123, 158, 200, 0.25);
+    background: rgba(123, 158, 200, 0.2);
+    border-color: rgba(123, 158, 200, 0.18);
   }
 
   &:active:not(:disabled) {
@@ -1464,12 +1546,13 @@ function onPanelLeft() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: $radius-button;
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
+  color: rgba(30, 30, 50, 0.5);
 
   .mic-icon {
     font-size: 1rem;
@@ -1479,13 +1562,15 @@ function onPanelLeft() {
   }
 
   &:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(123, 158, 200, 0.08);
+    border-color: rgba(123, 158, 200, 0.14);
+    color: rgba(123, 158, 200, 0.7);
   }
 
   &.active {
-    background: rgba(76, 175, 80, 0.14);
-    border-color: rgba(76, 175, 80, 0.28);
+    background: rgba(76, 175, 80, 0.1);
+    border-color: rgba(76, 175, 80, 0.22);
+    color: rgba(76, 175, 80, 0.8);
 
     .mic-pulse {
       position: absolute;
@@ -1515,7 +1600,7 @@ function onPanelLeft() {
 
 .llm-chat-hint {
   font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.2);
+  color: rgba(0, 0, 0, 0.18);
   margin: 0;
   padding: 0.4rem 1rem 0.6rem;
   text-align: center;

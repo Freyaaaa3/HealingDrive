@@ -1,16 +1,37 @@
 <template>
   <div class="debug-dock" :class="{ 'debug-dock--collapsed': !debugExpanded }">
-    <button
-      type="button"
-      class="debug-rail"
-      :aria-expanded="debugExpanded"
-      :aria-label="debugExpanded ? '向左收起调试' : '向右展开调试'"
-      @click="debugExpanded = !debugExpanded"
-    >
-      <span v-if="!debugExpanded" class="debug-rail__chev">›</span>
-      <span v-else class="debug-rail__chev">‹</span>
-      <span class="debug-rail__text">调试</span>
-    </button>
+    <div class="debug-rail">
+      <div class="debug-rail__top">
+        <button
+          type="button"
+          class="debug-rail__toggle"
+          :aria-expanded="debugExpanded"
+          :aria-label="debugExpanded ? '向左收起调试' : '向右展开调试'"
+          @click="debugExpanded = !debugExpanded"
+        >
+          <span v-if="!debugExpanded" class="debug-rail__chev">›</span>
+          <span v-else class="debug-rail__chev">‹</span>
+          <span class="debug-rail__text">调试</span>
+        </button>
+      </div>
+
+      <div class="debug-rail__bottom">
+        <button type="button" class="debug-rail__icon-btn" title="设置" @click="() => {}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+          </svg>
+        </button>
+        <button type="button" class="debug-rail__icon-btn" title="夜间模式" @click="toggleDarkMode">
+          <svg v-if="isDarkMode" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
 
     <div class="debug-panel-wrap">
       <div class="debug-panel">
@@ -430,15 +451,14 @@
           </div>
         </section>
 
-        </div>
-
       </div>
-
-    <footer class="debug-footer">
-      <button type="button" @click="testWakeWord" class="action-btn">模拟唤醒词</button>
-      <button type="button" @click="printToConsole" class="action-btn secondary">输出到控制台</button>
-    </footer>
+      <!-- 底部按钮：固定在调试面板底部，视觉上包裹在面板内 -->
+      <footer class="debug-footer">
+        <button type="button" @click="testWakeWord" class="action-btn">模拟唤醒词</button>
+        <button type="button" @click="printToConsole" class="action-btn secondary">输出到控制台</button>
+      </footer>
     </div>
+  </div>
   </div>
 </template>
 
@@ -450,12 +470,16 @@ import {
 } from '@/types'
 import type { LLMModelStatus } from '@/types'
 import {
+  CONTEXT_MAX_TURNS, CONTEXT_MAX_CHARS,
+} from '@/config/constants'
+import {
   getAnimationStateList,
   type AnimationStateConfig,
 } from '@/core/AvatarAnimationConfigLoader'
 
 const appStore = useAppStore()
 const debugExpanded = ref(true)
+const isDarkMode = ref(true)
 
 /** 从配置文件动态加载所有动效状态 */
 const animationStates = getAnimationStateList()
@@ -670,8 +694,8 @@ function clearStrategyCache() {
 // ==================== M12: 上下文记忆管理 ====================
 
 /** 上下文阈值配置（从常量读取） */
-const contextMaxTurns = 8  // CONTEXT_MAX_TURNS
-const contextMaxChars = 1500  // CONTEXT_MAX_CHARS
+const contextMaxTurns = CONTEXT_MAX_TURNS
+const contextMaxChars = CONTEXT_MAX_CHARS
 
 /** 是否接近阈值（80%以上） */
 const isContextNearLimit = computed(() => {
@@ -821,6 +845,11 @@ function stopVoiceInteraction() {
   }
 }
 
+function toggleDarkMode() {
+  isDarkMode.value = !isDarkMode.value
+  console.log('[Debug] 夜间模式切换:', isDarkMode.value ? '深色' : '浅色')
+}
+
 function testWakeWord() {
   console.log('[Debug] 模拟唤醒词触发')
   
@@ -908,14 +937,14 @@ function printToConsole() {
 .debug-dock {
   position: fixed;
   left: 0;
-  top: 12px;
-  bottom: 12px;
+  top: 0;
+  bottom: 0;
   z-index: $z-debug;
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  width: min(440px, calc(100vw - 56px));
-  max-width: calc(100vw - 56px);
+  width: min(560px, calc(100vw - 52px));
+  max-width: calc(100vw - 52px);
   transition: width 0.4s cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
 
@@ -929,26 +958,75 @@ function printToConsole() {
 }
 
 .debug-rail {
-  width: 44px;
+  width: 80px;
   flex-shrink: 0;
   border: none;
-  border-radius: 0 $radius-panel $radius-panel 0;
-  cursor: pointer;
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px 4px;
+  justify-content: space-between;
+  padding: 0;
   @include glass-effect(rgba(255, 255, 255, 0.88), 20px);
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.06);
   color: $color-text-secondary;
   font-family: $font-family-base;
   transition: background 0.2s, color 0.2s;
+  overflow: hidden;
+
+  &__top {
+    padding: 12px 4px;
+  }
+
+  &__bottom {
+    padding: 12px 4px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.debug-rail__toggle {
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  transition: color 0.2s;
 
   &:hover {
     color: $color-primary;
-    background: rgba(255, 255, 255, 0.95);
+  }
+}
+
+.debug-rail__icon-btn {
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.04);
+  color: rgba(0, 0, 0, 0.4);
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba(123, 158, 200, 0.12);
+    color: $color-primary;
+  }
+
+  svg {
+    display: block;
   }
 }
 
@@ -967,6 +1045,9 @@ function printToConsole() {
 }
 
 .debug-panel-wrap {
+  padding:30px 45px 20px 10px;
+  background-color: #dee1ec50;
+  background-image: linear-gradient(0dge, #cfd8e43d, #d4dfee3d 100%, #2a5faa3d 100%, #2c333d3d 100%);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -986,20 +1067,61 @@ function printToConsole() {
   height: 100%;
   display: flex;
   flex-direction: column;
-  border-radius: 0 $radius-panel $radius-panel 0;
   overflow: hidden;
   @include glass-effect(rgba(255, 255, 255, 0.78), 28px);
-  border: 0.5px solid rgba(255, 255, 255, 0.55);
+  border: 5px solid rgba(229, 233, 233, 0.55);
+  border-radius: 3%;
+  will-change: transform;
   border-left: none;
   box-shadow: $shadow-panel;
   color: $color-text-primary;
   font-size: 13px;
   font-family: $font-family-base;
+  position: relative;
+
+  // 底部灰白色底图（伪元素以避免被内部内容遮挡）
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: rgba(240, 242, 245, 0.45);
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  // 调试面板内容（滚动区 + 底部按钮统一由 debug-body 管理）
+  .debug-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 10px 12px 12px;
+  }
+
+  // 底部两个按钮：随 debug-body 内容滚动
+  .debug-footer {
+    display: flex;
+    gap: 10px;
+    padding: 10px 14px 12px;
+    flex-shrink: 0;
+    background: rgba(240, 242, 245, 0.6);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 0.5px solid rgba(0, 0, 0, 0.06);
+
+    .action-btn {
+      flex: 1;
+    }
+  }
 }
 
 .debug-panel-header {
   display: flex;
   align-items: center;
+  border-radius: 50%;
   justify-content: space-between;
   padding: 12px 14px;
   flex-shrink: 0;
@@ -1047,17 +1169,6 @@ function printToConsole() {
   color: $color-primary;
 }
 
-.debug-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 10px 12px 12px;
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
 .debug-zone-label {
   margin: 0 0 10px;
   font-size: 11px;
@@ -1067,20 +1178,7 @@ function printToConsole() {
   color: $color-text-muted;
 }
 
-.debug-footer {
-  display: flex;
-  gap: 10px;
-  padding: 10px 14px 12px;
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.42);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  border-top: 0.5px solid rgba(0, 0, 0, 0.06);
-
-  .action-btn {
-    flex: 1;
-  }
-}
+// .debug-footer 已在 .debug-panel 内定义
 
 @media (max-width: 640px) {
   .debug-dock:not(.debug-dock--collapsed) {
