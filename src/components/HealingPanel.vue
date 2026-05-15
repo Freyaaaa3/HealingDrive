@@ -61,10 +61,17 @@
 
           <!-- 底部留白区 -->
           <div class="section-bottom">
-            <!-- 提示文字（仅在待机态显示） -->
-            <Transition name="text-fade">
-              <p 
-                v-if="showHintText && !isInteracting" 
+            <!-- ASR网络错误提示 -->
+            <Transition name="text-fade" mode="out-in">
+              <div v-if="asrError" class="asr-error-hint" :key="'asr-error'">
+                <span class="asr-error-icon">!</span>
+                <span>语音识别暂时不可用</span>
+                <button class="asr-retry-btn" @click.stop="emit('retryAsr')">重试</button>
+              </div>
+              <!-- 提示文字（仅在待机态且无错误时显示） -->
+              <p
+                v-else-if="showHintText && !isInteracting"
+                key="hint"
                 class="hint-text"
               >
                 我在听，请说...
@@ -83,7 +90,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '@/stores/appStore'
-import { PanelVisibility, AvatarState } from '@/types'
+import { PanelVisibility, AvatarState, ASRStatus } from '@/types'
 import AvatarDisplay from './AvatarDisplay.vue'
 
 interface Props {
@@ -117,9 +124,13 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   (e: 'enter-complete'): void
   (e: 'leave-complete'): void
+  (e: 'retryAsr'): void
 }>()
 
 const appStore = useAppStore()
+
+// ASR 是否处于错误状态
+const asrError = computed(() => appStore.asrStatus === ASRStatus.ERROR)
 
 // ==================== 计算属性 ====================
 
@@ -203,6 +214,7 @@ function onLeaveComplete() {
 .panel-glass-bg {
   position: absolute;
   inset: 0;
+  opacity: 0;  // 初始隐藏，由入场动画控制
   // 与 AI 对话测试框统一的深色半透明风格
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.07);
@@ -306,6 +318,56 @@ function onLeaveComplete() {
   opacity: 0.7;
 }
 
+// ==================== ASR 错误提示 ====================
+
+.asr-error-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: $font-size-hint;
+  color: $color-text-muted;
+  opacity: 0.9;
+  padding: 0.35rem 0.6rem;
+  background: rgba(239, 83, 80, 0.08);
+  border: 1px solid rgba(239, 83, 80, 0.15);
+  border-radius: $radius-button;
+}
+
+.asr-error-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(239, 83, 80, 0.25);
+  color: #EF5350;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.asr-retry-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: $color-primary;
+  font-size: 12px;
+  font-weight: $font-weight-medium;
+  padding: 0.2rem 0.7rem;
+  border-radius: $radius-button;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  pointer-events: auto;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.18);
+  }
+
+  &:active {
+    transform: scale(0.96);
+  }
+}
+
 // ==================== Module 3: 对话文字展示（层次优化）====================
 
 .user-interim-text {
@@ -342,6 +404,7 @@ function onLeaveComplete() {
   position: absolute;
   inset: -1px;
   border-radius: inherit;
+  opacity: 0;  // 初始隐藏，由入场动画控制
   background: linear-gradient(
     135deg,
     rgba(255, 255, 255, 0.35) 0%,
@@ -353,35 +416,107 @@ function onLeaveComplete() {
   z-index: 0;
 }
 
-// ==================== 过渡动画（苹果精致缓动）====================
+// ==================== 过渡动画（弹性+层叠+景深）====================
 
-// 面板进入：从下往上轻微放大 + 淡入
+// 面板进入：大幅位移 + 缩放 + 阴影生长
 .panel-transition-enter-active {
-  transition: all $anim-panel-enter cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    transform $anim-panel-enter cubic-bezier(0.16, 1, 0.3, 1),
+    opacity ($anim-panel-enter * 0.6) ease-out,
+    box-shadow ($anim-panel-enter * 0.8) ease-out;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
 }
 
+// 面板退出：柔和下沉 + 收缩消散
 .panel-transition-leave-active {
-  transition: all $anim-panel-exit cubic-bezier(0.55, 0.055, 0.675, 0.19);
+  transition:
+    transform $anim-panel-exit cubic-bezier(0.4, 0, 1, 1),
+    opacity ($anim-panel-exit * 0.65) ease-in,
+    box-shadow ($anim-panel-exit * 0.7) ease-in;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
 }
 
 .panel-transition-enter-from {
   opacity: 0;
-  transform: translateX(-50%) translateY(-50%) translateY(24px) scale(0.96);
+  transform: translateX(-50%) translateY(-50%) translateY(48px) scale(0.88);
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
 }
 
 .panel-transition-enter-to {
   opacity: 1;
   transform: translateX(-50%) translateY(-50%) translateY(0) scale(1);
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
 .panel-transition-leave-from {
   opacity: 1;
   transform: translateX(-50%) translateY(-50%) translateY(0) scale(1);
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.12),
+    0 4px 16px rgba(0, 0, 0, 0.06);
 }
 
 .panel-transition-leave-to {
   opacity: 0;
-  transform: translateX(-50%) translateY(-50%) translateY(16px) scale(0.97);
+  transform: translateX(-50%) translateY(-50%) translateY(28px) scale(0.95);
+  box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+}
+
+// ==================== 内容层叠入场动画 ====================
+
+@keyframes panel-stagger-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.healing-panel.is-visible .section-top {
+  animation: panel-stagger-up 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 80ms;
+}
+
+.healing-panel.is-visible .section-avatar {
+  animation: panel-stagger-up 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 160ms;
+}
+
+.healing-panel.is-visible .section-bottom {
+  animation: panel-stagger-up 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 240ms;
+}
+
+// 毛玻璃背景层叠入场
+.healing-panel.is-visible .panel-glass-bg {
+  animation: glass-fade-in 600ms ease-out both;
+  animation-delay: 40ms;
+}
+
+@keyframes glass-fade-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+    -webkit-backdrop-filter: blur(0px);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+}
+
+// 边缘柔光层叠入场
+.healing-panel.is-visible .panel-edge-glow {
+  animation: panel-stagger-up 500ms ease-out both;
+  animation-delay: 100ms;
 }
 
 // 文字渐变过渡

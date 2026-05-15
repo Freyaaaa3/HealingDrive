@@ -8,6 +8,14 @@ declare module '*.vue' {
 
 interface ImportMetaEnv {
   readonly VITE_OLLAMA_BASE_URL: string
+  readonly VITE_ASR_PROVIDER: string
+  readonly VITE_ASR_WS_URL: string
+  readonly VITE_IFLYTEK_APP_ID: string
+  readonly VITE_IFLYTEK_API_KEY: string
+  readonly VITE_IFLYTEK_API_SECRET: string
+  readonly VITE_TTS_MODE: string
+  readonly VITE_TTS_HTTP_URL: string
+  readonly VITE_TTS_EDGE_VOICE: string
   readonly VITE_OPENAI_API_KEY: string
   readonly VITE_DEEPSEEK_API_KEY: string
   readonly VITE_DOUBAO_API_KEY: string
@@ -27,7 +35,7 @@ interface Window {
     animController: import('@/core/AvatarAnimationController').AvatarAnimationController
     autoExitMgr: import('@/core/AutoExitManager').AutoExitManager
     store: ReturnType<typeof import('@/stores/appStore').useAppStore>
-    asrEngine: import('@/services/ASREngine').ASREngine
+    asrEngine: import('@/services/asrTypes').IASREngine
     ttsEngine: import('@/services/TTSEngine').TTSEngine
     voiceInteraction: import('@/services/VoiceInteractionManager').VoiceInteractionManager
     emotionEngine: import('@/services/EmotionRecognition').EmotionRecognitionEngine

@@ -5,12 +5,42 @@
  * Demo版仅支持标准普通话
  */
 import { ASRStatus, ASRResult } from '@/types'
+import type { IASREngine } from './asrTypes'
 
-export class ASREngine {
+export class ASREngine implements IASREngine {
   private recognition: any = null          // SpeechRecognition实例
   private status: ASRStatus = ASRStatus.IDLE
   private isListeningForInput: boolean = false
   private isManualStop: boolean = false    // 主动停止标志（抑制aborted错误）
+
+  /** 连续错误重试计数 */
+  private consecutiveErrors: number = 0
+  /** 重试定时器 */
+  private restartTimer: ReturnType<typeof setTimeout> | null = null
+  /** 合并短时间内的多次 onend / visibility 为一次 scheduleRestart */
+  private pendingRestartDebounce: ReturnType<typeof setTimeout> | null = null
+  /** 页面隐藏时不自动重连（熄屏、切后台），避免与 Lifecycle 休眠/唤醒连打 */
+  private pageHidden = false
+
+  private readonly onDocumentVisibilityChange = (): void => {
+    this.pageHidden = typeof document !== 'undefined' && document.hidden
+    if (this.pageHidden) {
+      this.cancelRestartTimer()
+      if (import.meta.env.DEV) {
+        console.log('[ASREngine] 页面不可见，已取消待执行的语音识别重连')
+      }
+      return
+    }
+    if (!this.isListeningForInput || this.status === ASRStatus.ERROR) return
+    this.requestRestartDebounced(320)
+  }
+
+  /** 最大连续重试次数 */
+  private static readonly MAX_RETRY_COUNT = 5
+  /** 最大退避间隔(ms) */
+  private static readonly MAX_BACKOFF_MS = 30000
+  /** 自动重启最小间隔：避免 onend→立即 start 与 onerror 竞态导致高速循环 */
+  private static readonly MIN_RESTART_DELAY_MS = 550
 
   /** 最终结果回调 */
   private onFinalResultCallback: ((result: ASRResult) => void) | null = null
@@ -66,10 +96,21 @@ export class ASREngine {
 
     // 结束事件（可能被系统停止）
     this.recognition.onend = () => {
-      if (this.isListeningForInput && this.status !== ASRStatus.ERROR) {
-        console.warn('[ASREngine] 意外停止，自动重启...')
-        try { this.recognition?.start() } catch(e) { /* ignore */ }
+      if (this.isManualStop) {
+        this.isManualStop = false
+        return
       }
+      if (this.pageHidden) {
+        return
+      }
+      if (this.isListeningForInput && this.status !== ASRStatus.ERROR) {
+        this.requestRestartDebounced(150)
+      }
+    }
+
+    if (typeof document !== 'undefined') {
+      this.pageHidden = document.hidden
+      document.addEventListener('visibilitychange', this.onDocumentVisibilityChange)
     }
   }
 
@@ -92,6 +133,7 @@ export class ASREngine {
 
       console.log(`[ASREngine] 最终识别: "${transcript}" (${asrResult.confidence.toFixed(2)})`)
       
+      this.consecutiveErrors = 0  // 成功识别，重置错误计数
       this.setStatus(ASRStatus.SUCCESS)
       this.onFinalResultCallback?.(asrResult)
     } else if (!isFinal && transcript) {
@@ -122,11 +164,23 @@ export class ASREngine {
         break
       case 'not-allowed':
         console.error('[ASREngine] 麦克风权限被拒绝')
+        this.cancelRestartTimer()
         this.setStatus(ASRStatus.ERROR)
         this.onErrorCallback?.('麦克风权限不足')
         break
       case 'network':
-        console.warn('[ASREngine] 网络错误，重试中...')
+        this.consecutiveErrors++
+        if (this.consecutiveErrors >= ASREngine.MAX_RETRY_COUNT) {
+          console.error(`[ASREngine] 网络连续失败${this.consecutiveErrors}次，停止重试`)
+          this.cancelRestartTimer()
+          this.setStatus(ASRStatus.ERROR)
+          this.onErrorCallback?.('网络连接异常，语音识别暂时不可用')
+          this.isListeningForInput = false
+        } else {
+          console.warn(
+            `[ASREngine] 网络错误(${this.consecutiveErrors}/${ASREngine.MAX_RETRY_COUNT})，退避后重试（需可访问 Google 语音服务）`,
+          )
+        }
         break
       default:
         console.error(`[ASREngine] 识别错误: ${error}`)
@@ -157,6 +211,8 @@ export class ASREngine {
 
     this.isListeningForInput = true
     this.isManualStop = false
+    this.consecutiveErrors = 0
+    this.cancelRestartTimer()
     this.setStatus(ASRStatus.LISTENING)
 
     try {
@@ -185,6 +241,8 @@ export class ASREngine {
 
     this.isListeningForInput = false
     this.isManualStop = true
+    this.consecutiveErrors = 0
+    this.cancelRestartTimer()
     this.setStatus(ASRStatus.IDLE)
 
     try {
@@ -234,13 +292,85 @@ export class ASREngine {
    * 释放资源
    */
   destroy(): void {
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onDocumentVisibilityChange)
+    }
     this.stopListening()
+    this.cancelRestartTimer()
     this.recognition = null
     this.setStatus(ASRStatus.IDLE)
     console.log('[ASREngine] 资源已释放')
   }
 
   // ==================== 内部 ====================
+
+  /**
+   * 合并 onend / 回到前台 触发的多次重启请求，避免同一轮里打多条「约 1s 后重试」
+   */
+  private requestRestartDebounced(ms: number): void {
+    if (!this.isListeningForInput || this.status === ASRStatus.ERROR) return
+    if (this.pageHidden) return
+    if (this.pendingRestartDebounce) {
+      clearTimeout(this.pendingRestartDebounce)
+      this.pendingRestartDebounce = null
+    }
+    this.pendingRestartDebounce = setTimeout(() => {
+      this.pendingRestartDebounce = null
+      if (!this.pageHidden && this.isListeningForInput && this.status !== ASRStatus.ERROR) {
+        this.scheduleRestart()
+      }
+    }, ms)
+  }
+
+  /**
+   * 指数退避重启（避免网络错误时高速循环）
+   * 始终带最小延迟，避免 onend 与 onerror 顺序导致「零延迟连打 start」
+   */
+  private scheduleRestart(): void {
+    if (!this.isListeningForInput || this.status === ASRStatus.ERROR) return
+    if (this.restartTimer) return
+
+    let delay = ASREngine.MIN_RESTART_DELAY_MS
+    if (this.consecutiveErrors > 0) {
+      const backoff = Math.min(
+        1000 * Math.pow(2, this.consecutiveErrors - 1),
+        ASREngine.MAX_BACKOFF_MS,
+      )
+      delay = Math.max(ASREngine.MIN_RESTART_DELAY_MS, backoff)
+      console.warn(`[ASREngine] 将在约 ${Math.round(delay / 1000)}s 后重试 (${this.consecutiveErrors}/${ASREngine.MAX_RETRY_COUNT})`)
+    } else if (import.meta.env.DEV) {
+      console.log(`[ASREngine] 识别会话结束，${ASREngine.MIN_RESTART_DELAY_MS}ms 后尝试恢复监听`)
+    }
+
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null
+      this.doRestart()
+    }, delay)
+  }
+
+  private doRestart(): void {
+    if (!this.isListeningForInput || this.status === ASRStatus.ERROR) return
+
+    console.warn('[ASREngine] 尝试恢复语音识别...')
+    try {
+      this.recognition?.start()
+    } catch (e) {
+      // 常见：InvalidStateError（仍在 running）；交给 onend 再次 schedule
+      console.warn('[ASREngine] 恢复启动未成功，将稍后重试:', e)
+      this.requestRestartDebounced(450)
+    }
+  }
+
+  private cancelRestartTimer(): void {
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer)
+      this.restartTimer = null
+    }
+    if (this.pendingRestartDebounce) {
+      clearTimeout(this.pendingRestartDebounce)
+      this.pendingRestartDebounce = null
+    }
+  }
 
   private setStatus(status: ASRStatus): void {
     const prev = this.status

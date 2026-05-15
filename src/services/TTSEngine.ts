@@ -1,67 +1,74 @@
 /**
- * TTS语音合成引擎
- * 
- * 基于Web Speech Synthesis API封装
- * Demo版固定温柔治愈女声音色
+ * TTS 语音合成引擎
+ *
+ * - browser：Web Speech Synthesis（默认）
+ * - http：请求本地/内网 RealtimeTTS 配套服务（Edge 神经声线，与仓库内 RealtimeTTS/EdgeEngine 同通道）
+ *
+ * 启用 http：设置 VITE_TTS_MODE=http 或配置 VITE_TTS_HTTP_URL（如 http://127.0.0.1:5123），
+ * 并运行 scripts/realtimetts_edge_server.py。未配置时仍使用浏览器 SpeechSynthesis。
  */
 import { TTSStatus, TTSConfig } from '@/types'
+
+function resolveUseHttpTts(): boolean {
+  const mode = (import.meta.env.VITE_TTS_MODE || '').toLowerCase().trim()
+  if (mode === 'http') return true
+  return !!(import.meta.env.VITE_TTS_HTTP_URL || '').trim()
+}
+
+function ttsBaseUrl(): string {
+  const u = (import.meta.env.VITE_TTS_HTTP_URL || 'http://127.0.0.1:5123').trim()
+  return u.replace(/\/$/, '')
+}
+
+function defaultEdgeVoice(): string {
+  return (import.meta.env.VITE_TTS_EDGE_VOICE || 'zh-CN-XiaoxiaoNeural').trim()
+}
 
 export class TTSEngine {
   private status: TTSStatus = TTSStatus.IDLE
   private currentUtterance: SpeechSynthesisUtterance | null = null
   private isSpeaking: boolean = false
+  private readonly useHttp: boolean = resolveUseHttpTts()
 
-  /** 播报完成回调 */
+  private currentAudio: HTMLAudioElement | null = null
+  private currentObjectUrl: string | null = null
+
   private onSpeakEndCallback: (() => void) | null = null
-  
-  /** 状态变更回调 */
   private onStatusChangeCallback: ((status: TTSStatus) => void) | null = null
 
-  /** 默认配置（温柔治愈女声） */
   private config: TTSConfig = {
-    rate: 0.9,        // 略慢于正常语速（治愈向）
-    pitch: 1.05,      // 略高于中性（温柔感）
-    volume: 0.8,      // 中等音量
+    rate: 0.9,
+    pitch: 1.05,
+    volume: 0.8,
   }
 
-  /** 可用中文女声列表（按优先级排序） */
   private preferredVoices = [
-    // iOS/macOS 中文女声
-    'Ting-Ting',       // macOS Ting-Ting
-    // Windows 中文女声
+    'Ting-Ting',
     'Huihui',
     'Xiaoxiao',
-    // Android 常见中文女声
     'Xiaoyi',
-    // 通用匹配关键词
     'Female',
     'Chinese Female',
   ]
 
-  /**
-   * 初始化TTS引擎
-   * 预加载可用音色列表
-   */
   async init(): Promise<boolean> {
+    if (this.useHttp) {
+      console.log('[TTSEngine] HTTP 模式（RealtimeTTS/Edge 配套服务），跳过浏览器语音列表')
+      return true
+    }
+
     if (!('speechSynthesis' in window)) {
       console.error('[TTSEngine] 浏览器不支持语音合成API')
       this.status = TTSStatus.ERROR
       return false
     }
 
-    // 等待音色列表加载完成
     await this.waitForVoices()
-
-    // 选择最优治愈女声
     this.selectBestVoice()
-
-    console.log('[TTSEngine] ✓ 引擎初始化完成')
+    console.log('[TTSEngine] ✓ 引擎初始化完成（浏览器）')
     return true
   }
 
-  /**
-   * 等待浏览器加载语音列表
-   */
   private waitForVoices(): Promise<void> {
     return new Promise((resolve) => {
       const voices = speechSynthesis.getVoices()
@@ -70,20 +77,15 @@ export class TTSEngine {
         return
       }
       speechSynthesis.onvoiceschanged = () => resolve()
-      setTimeout(resolve, 2000)  // 最多等2秒
+      setTimeout(resolve, 2000)
     })
   }
 
-  /**
-   * 选择最合适的中文女声
-   */
   private selectBestVoice(): void {
     const voices = speechSynthesis.getVoices()
-    
+
     for (const name of this.preferredVoices) {
-      const voice = voices.find(v =>
-        v.name.includes(name) || v.lang.startsWith('zh')
-      )
+      const voice = voices.find((v) => v.name.includes(name) || v.lang.startsWith('zh'))
       if (voice) {
         this.config.voiceName = voice.name
         console.log(`[TTSEngine] 选中音色: ${voice.name} (${voice.lang})`)
@@ -91,8 +93,7 @@ export class TTSEngine {
       }
     }
 
-    // 兜底：选任意中文语音
-    const zhVoice = voices.find(v => v.lang.startsWith('zh'))
+    const zhVoice = voices.find((v) => v.lang.startsWith('zh'))
     if (zhVoice) {
       this.config.voiceName = zhVoice.name
       console.log(`[TTSEngine] 使用备用音色: ${zhVoice.name}`)
@@ -101,11 +102,6 @@ export class TTSEngine {
     }
   }
 
-  /**
-   * 播报文字
-   * @param text 要播报的文本
-   * @param overrideConfig 可选覆盖配置
-   */
   speak(
     text: string,
     overrideConfig?: TTSConfig,
@@ -117,7 +113,6 @@ export class TTSEngine {
       return false
     }
 
-    // 如果正在说话，先停止当前播报
     if (this.isSpeaking) {
       this.stop()
     }
@@ -125,25 +120,122 @@ export class TTSEngine {
     this.onSpeakEndCallback = onEnd || null
     this.onStatusChangeCallback = onStatusChange || null
 
-    // 创建语音实例
+    if (this.useHttp) {
+      void this.speakHttp(text, overrideConfig)
+      return true
+    }
+
+    return this.speakBrowser(text, overrideConfig)
+  }
+
+  private async speakHttp(text: string, overrideConfig?: TTSConfig): Promise<void> {
+    const finalConfig = { ...this.config, ...overrideConfig }
+    const voice =
+      (finalConfig.voiceName && (finalConfig.voiceName.includes('zh-') || finalConfig.voiceName.includes('Neural')))
+        ? finalConfig.voiceName
+        : defaultEdgeVoice()
+
+    this.setStatus(TTSStatus.SPEAKING)
+    this.isSpeaking = true
+    let playbackDone = false  // 防止 onended 后又触发 onerror
+
+    try {
+      const res = await fetch(`${ttsBaseUrl()}/speak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          voice,
+          rate: finalConfig.rate,
+          volume: finalConfig.volume,
+        }),
+      })
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => res.statusText)
+        console.error('[TTSEngine] HTTP 合成失败', res.status, errText)
+        this.fallbackToBrowserTTS(text, overrideConfig)
+        return
+      }
+
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      this.currentObjectUrl = url
+      const audio = new Audio(url)
+      this.currentAudio = audio
+      audio.volume = typeof finalConfig.volume === 'number' ? finalConfig.volume : 0.8
+
+      audio.onended = () => {
+        if (playbackDone) return
+        playbackDone = true
+        this.cleanupHttpAudio()
+        this.isSpeaking = false
+        this.setStatus(TTSStatus.IDLE)
+        this.onSpeakEndCallback?.()
+        console.log('[TTSEngine] ✓ HTTP 播报完成')
+      }
+
+      audio.onerror = () => {
+        if (playbackDone) return
+        playbackDone = true
+        console.warn('[TTSEngine] HTTP 音频播放异常，降级到浏览器 TTS')
+        this.cleanupHttpAudio()
+        this.fallbackToBrowserTTS(text, overrideConfig)
+      }
+
+      await audio.play()
+      console.log(`[TTSEngine] HTTP 开始播报: "${text.substring(0, 30)}..."`)
+    } catch (e) {
+      if (playbackDone) return
+      playbackDone = true
+      console.warn('[TTSEngine] HTTP 服务不可用，降级到浏览器 TTS:', (e as Error)?.message)
+      this.cleanupHttpAudio()
+      this.fallbackToBrowserTTS(text, overrideConfig)
+    }
+  }
+
+  /**
+   * HTTP TTS 失败时降级到浏览器 SpeechSynthesis
+   */
+  private fallbackToBrowserTTS(text: string, overrideConfig?: TTSConfig): void {
+    console.warn('[TTSEngine] 降级到浏览器 TTS')
+    // 临时切回 browser 模式只播报本次文本
+    const savedHttp = this.useHttp
+    this.useHttp = false
+    this.speakBrowser(text, overrideConfig)
+    this.useHttp = savedHttp
+  }
+
+  private cleanupHttpAudio(): void {
+    if (this.currentAudio) {
+      try {
+        this.currentAudio.pause()
+      } catch {
+        /* ignore */
+      }
+      this.currentAudio.src = ''
+      this.currentAudio = null
+    }
+    if (this.currentObjectUrl) {
+      URL.revokeObjectURL(this.currentObjectUrl)
+      this.currentObjectUrl = null
+    }
+  }
+
+  private speakBrowser(text: string, overrideConfig?: TTSConfig): boolean {
     const utterance = new SpeechSynthesisUtterance(text)
-    
-    // 应用配置
+
     const finalConfig = { ...this.config, ...overrideConfig }
     utterance.rate = finalConfig.rate ?? 0.9
     utterance.pitch = finalConfig.pitch ?? 1.05
     utterance.volume = finalConfig.volume ?? 0.8
-
-    // 设置语言
     utterance.lang = 'zh-CN'
 
-    // 设置音色
     if (finalConfig.voiceName) {
-      const voice = speechSynthesis.getVoices().find(v => v.name === finalConfig.voiceName)
+      const voice = speechSynthesis.getVoices().find((v) => v.name === finalConfig.voiceName)
       if (voice) utterance.voice = voice
     }
 
-    // 事件绑定
     utterance.onstart = () => {
       this.isSpeaking = true
       this.setStatus(TTSStatus.SPEAKING)
@@ -163,29 +255,28 @@ export class TTSEngine {
         console.error('[TTSEngine] 播报错误:', event.error)
         this.setStatus(TTSStatus.ERROR)
       } else {
-        // 被打断是正常操作
         this.isSpeaking = false
         this.currentUtterance = null
         this.setStatus(TTSStatus.PAUSED)
       }
     }
 
-    // 边说边打边界事件（用于打断检测）
-    utterance.onboundary = () => {
-      // 可在此处检测是否需要打断
-    }
-
-    // 开始播放
     this.currentUtterance = utterance
     speechSynthesis.speak(utterance)
-
     return true
   }
 
-  /**
-   * 停止当前播报（用户说话时打断）
-   */
   stop(): void {
+    if (this.useHttp) {
+      if (this.isSpeaking || this.currentAudio) {
+        this.cleanupHttpAudio()
+        this.isSpeaking = false
+        this.setStatus(TTSStatus.PAUSED)
+        console.log('[TTSEngine] HTTP 播报已中断')
+      }
+      return
+    }
+
     if (this.isSpeaking) {
       speechSynthesis.cancel()
       this.isSpeaking = false
@@ -195,65 +286,57 @@ export class TTSEngine {
     }
   }
 
-  /**
-   * 暂停播报（保留位置）
-   */
   pause(): void {
+    if (this.useHttp) {
+      if (this.currentAudio && !this.currentAudio.paused) {
+        this.currentAudio.pause()
+        this.setStatus(TTSStatus.PAUSED)
+      }
+      return
+    }
     if (this.isSpeaking && !speechSynthesis.paused) {
       speechSynthesis.pause()
       this.setStatus(TTSStatus.PAUSED)
     }
   }
 
-  /**
-   * 恢复播报
-   */
   resume(): void {
+    if (this.useHttp) {
+      void this.currentAudio?.play()
+      if (this.currentAudio && !this.currentAudio.paused) {
+        this.setStatus(TTSStatus.SPEAKING)
+      }
+      return
+    }
     if (speechSynthesis.paused) {
       speechSynthesis.resume()
       this.setStatus(TTSStatus.SPEAKING)
     }
   }
 
-  /**
-   * 是否正在播报
-   */
   isCurrentlySpeaking(): boolean {
     return this.isSpeaking
   }
 
-  /**
-   * 获取状态
-   */
   getStatus(): TTSStatus {
     return this.status
   }
 
-  /**
-   * 获取当前配置
-   */
   getConfig(): Readonly<TTSConfig> {
     return { ...this.config }
   }
 
-  /**
-   * 更新配置（如音量调节）
-   */
   updateConfig(partial: Partial<TTSConfig>): void {
     Object.assign(this.config, partial)
   }
 
-  /**
-   * 释放资源
-   */
   destroy(): void {
     this.stop()
+    this.cleanupHttpAudio()
     this.onSpeakEndCallback = null
     this.onStatusChangeCallback = null
     console.log('[TTSEngine] 资源已释放')
   }
-
-  // ==================== 内部 ====================
 
   private setStatus(status: TTSStatus): void {
     const prev = this.status

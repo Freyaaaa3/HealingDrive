@@ -11,7 +11,7 @@ import {
   // M4 新增
   EmotionResult,
 } from '@/types'
-import { ASREngine } from './ASREngine'
+import type { IASREngine } from './asrTypes'
 import { TTSEngine } from './TTSEngine'
 import { VoiceCommandHandler } from './VoiceCommandHandler'
 import { AUTO_EXIT_TIMEOUT } from '@/config/constants'
@@ -55,7 +55,7 @@ export interface VoiceInteractionCallbacks {
 type LLMResponseGenerator = (userMessage: string, context: ConversationSession) => Promise<string>
 
 export class VoiceInteractionManager {
-  private asrEngine: ASREngine
+  private asrEngine: IASREngine
   private ttsEngine: TTSEngine
   private commandHandler: VoiceCommandHandler
   // M4: 情绪识别引擎（可选注入）
@@ -144,7 +144,7 @@ export class VoiceInteractionManager {
   }
 
   constructor(
-    asrEngine: ASREngine,
+    asrEngine: IASREngine,
     ttsEngine: TTSEngine,
     commandHandler: VoiceCommandHandler,
     emotionEngine?: EmotionRecognitionEngine,
@@ -704,12 +704,9 @@ export class VoiceInteractionManager {
       return
     }
 
-    // 重启ASR监听
-    if (!this.asrEngine.isActive()) {
-      this.startListeningForInput()
-    } else {
-      this.setPhase(ConversationPhase.AWAITING_INPUT)
-    }
+    // 无条件重启ASR监听（即使 isActive=true，也要重连 WebSocket）
+    this.asrEngine.stopListening()
+    this.startListeningForInput()
   }
 
   /**

@@ -11,6 +11,7 @@ export class WakeListener {
   private recognition: any = null       // SpeechRecognition实例
   private isListening: boolean = false
   private isManualStop: boolean = false  // 主动停止标志（抑制aborted错误和onend重启）
+  private lastError: string = ''        // 最近一次错误类型（供onend判断重启策略）
   private restartTimer: ReturnType<typeof setTimeout> | null = null
   private onWakeDetectedCallback: (() => void) | null = null
 
@@ -55,10 +56,9 @@ export class WakeListener {
     this.recognition.onerror = (event: any) => {
       // 主动停止产生的 aborted 不做错误处理
       if (this.isManualStop && event.error === 'aborted') {
-        console.log('[WakeListener] 已主动停止')
         return
       }
-      console.error('[WakeListener] 语音识别错误:', event.error)
+      this.lastError = event.error
       this.handleError(event.error)
     }
 
@@ -67,12 +67,19 @@ export class WakeListener {
       if (this.isManualStop) {
         // 主动停止，不重启
         this.isManualStop = false
+        this.lastError = ''
         return
       }
       if (this.isListening && this.status !== WakeStatus.ERROR) {
-        console.log('[WakeListener] 监听意外停止，准备重启...')
-        this.scheduleRestart()
+        // no-speech 是浏览器静默超时的正常行为，立即重启避免监听盲区
+        if (this.lastError === 'no-speech' || this.lastError === 'aborted') {
+          try { this.recognition?.start() } catch (e) { /* ignore */ }
+        } else {
+          console.log('[WakeListener] 监听意外停止，准备重启...')
+          this.scheduleRestart()
+        }
       }
+      this.lastError = ''
     }
   }
 
@@ -196,14 +203,13 @@ export class WakeListener {
   private handleError(error: string): void {
     switch (error) {
       case 'no-speech':
-        // 无语音输入，正常情况
+        // 静默超时，正常行为，不记录
         break
       case 'aborted':
-        // 用户或系统取消，正常
+        // 系统取消，正常行为，不记录
         break
       case 'network':
         console.warn('[WakeListener] 网络错误，稍后重试')
-        this.scheduleRestart()
         break
       case 'not-allowed':
         console.error('[WakeListener] 麦克风权限被拒绝')

@@ -198,7 +198,13 @@ const isVoiceActive = computed(
   () => appStore.asrStatus === 'listening' || appStore.ttsStatus === 'speaking',
 )
 
-const asrLabel = computed(() => (appStore.asrStatus === 'listening' ? '聆听' : appStore.asrStatus === 'recognizing' ? '识别' : 'ASR 空闲'))
+const asrLabel = computed(() => {
+  const s = appStore.asrStatus
+  if (s === 'listening') return '聆听'
+  if (s === 'recognizing') return '识别'
+  if (s === 'error') return '异常'
+  return 'ASR 空闲'
+})
 const ttsLabel = computed(() => (appStore.ttsStatus === 'speaking' ? '播报中' : 'TTS 空闲'))
 
 const phaseLabel = computed(() => {

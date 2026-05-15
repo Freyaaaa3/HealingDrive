@@ -153,6 +153,7 @@
       :user-interim-text="appStore.userInterimText"
       @enter-complete="onPanelEntered"
       @leave-complete="onPanelLeft"
+      @retry-asr="handleRetryASR"
     />
   </div>
 </template>
@@ -163,7 +164,8 @@ import { useAppStore } from '@/stores/appStore'
 import { LifecycleManager } from '@/core/LifecycleManager'
 import { AvatarAnimationController } from '@/core/AvatarAnimationController'
 import { AutoExitManager } from '@/core/AutoExitManager'
-import { ASREngine } from '@/services/ASREngine'
+import { createAsrEngine } from '@/services/asrFactory'
+import type { IASREngine } from '@/services/asrTypes'
 import { TTSEngine } from '@/services/TTSEngine'
 import { VoiceCommandHandler } from '@/services/VoiceCommandHandler'
 import { VoiceInteractionManager } from '@/services/VoiceInteractionManager'
@@ -179,7 +181,7 @@ import { ModelHub } from '@/core/ModelHub'
 import { StrategyEngine } from '@/core/StrategyEngine'
 import { PromptManager } from '@/services/PromptManager'
 import { ContextManager } from '@/core/ContextManager'
-import { WakeStatus, ConversationPhase, VoiceCommandType, EmotionType, ClearConfirmState } from '@/types'
+import { WakeStatus, ConversationPhase, VoiceCommandType, EmotionType, ClearConfirmState, ASRStatus } from '@/types'
 import DebugPanel from './components/DebugPanel.vue'
 import VisualizationPanel from './components/VisualizationPanel.vue'
 import HealingPanel from './components/HealingPanel.vue'
@@ -340,7 +342,7 @@ let animController: AvatarAnimationController | null = null
 let autoExitMgr: AutoExitManager | null = null
 
 // Module 3 实例
-let asrEngine: ASREngine | null = null
+let asrEngine: IASREngine | null = null
 let ttsEngine: TTSEngine | null = null
 let commandHandler: VoiceCommandHandler | null = null
 let voiceInteraction: VoiceInteractionManager | null = null
@@ -517,8 +519,8 @@ async function initVoiceEngines(): Promise<void> {
   console.log('[App] 初始化语音引擎...')
 
   // 初始化ASR
-  asrEngine = new ASREngine()
-  const asrOk = asrEngine.init()
+  asrEngine = createAsrEngine()
+  const asrOk = asrEngine.getStatus() !== ASRStatus.ERROR
   if (!asrOk) {
     console.warn('[App] ASR初始化失败，将使用降级模式')
   }
@@ -730,8 +732,7 @@ function handleWakeDetected(skipGreeting = false) {
 function startVoiceInteraction(): void {
   // 防御性初始化：如果引擎未就绪，尝试即时创建（同步部分）
   if (!asrEngine) {
-    asrEngine = new ASREngine()
-    asrEngine.init()
+    asrEngine = createAsrEngine()
     console.warn('[App] ASR引擎延迟初始化')
   }
   if (!ttsEngine) {
@@ -938,6 +939,20 @@ function stopVoiceInteraction(): void {
 function onPanelEntered() {
   appStore.onPanelEnterComplete()
   console.log('[App] 面板已完全展示')
+}
+
+/**
+ * ASR 网络错误重试
+ */
+function handleRetryASR(): void {
+  console.log('[App] 用户手动重试 ASR')
+  appStore.backToIdle()
+
+  // 重新启动ASR监听（会重置 consecutiveErrors）
+  if (voiceInteraction) {
+    voiceInteraction.startListeningForInput()
+    appStore.startListening()
+  }
 }
 
 function onPanelLeft() {

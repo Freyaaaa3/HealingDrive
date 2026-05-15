@@ -54,9 +54,9 @@ export const designTokens: DesignTokens = {
 /** 动画时间常量 */
 export const ANIMATION = {
   /** 面板进入动画时长 (ms) */
-  PANEL_ENTER: 500,
+  PANEL_ENTER: 600,
   /** 面板退出动画时长 (ms) */
-  PANEL_EXIT: 400,
+  PANEL_EXIT: 450,
   /** 待机呼吸周期 (ms) - 缓慢节奏不打扰驾驶 */
   IDLE_BREATHING: 3000,
   /** 倾听点头周期 (ms) */
